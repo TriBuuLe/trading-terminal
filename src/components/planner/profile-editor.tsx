@@ -286,10 +286,18 @@ function ScheduleRow({ i, upd }: { i: Profile["incomes"][number]; upd: (id: stri
           </option>
         ))}
       </select>
-      <span>· first paycheck</span>
-      {date("First paycheck", "firstPayDate")}
-      <span>last</span>
-      {date("Last paycheck", "lastPayDate")}
+      {i.payDatesFromDeposits && i.firstPayDate ? (
+        <span className="num" title="From your payroll deposits; updates when you import statements">
+          · paychecks {i.firstPayDate} → {i.lastPayDate ?? "still coming"} (from deposits)
+        </span>
+      ) : (
+        <>
+          <span>· first paycheck</span>
+          {date("First paycheck", "firstPayDate")}
+          <span>last</span>
+          {date("Last paycheck", "lastPayDate")}
+        </>
+      )}
       {i.frequency === "hourly" && (
         <>
           <span>· workdays</span>

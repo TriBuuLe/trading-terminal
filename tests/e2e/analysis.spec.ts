@@ -31,6 +31,11 @@ test("analysis: take-home for the year, spending by category, needs attention", 
       { date: `${y}-10-20`, description: "AIR CANADA 0142", amount: -420, category: "Transportation" }, // saved before Travel existed
     ];
     expect((await request.post("/api/finances/transactions", { data: { rows } })).ok()).toBe(true);
+    // Uploading the same statement again saves nothing; an overlapping one saves only the new rows.
+    expect(await (await request.post("/api/finances/transactions", { data: { rows } })).json()).toEqual({ saved: 0, duplicates: rows.length });
+    const overlap = [rows[0]!, { date: `${y}-10-21`, description: "PRESTO FARE", amount: -8.12, category: "Transportation" }, { date: `${y}-10-21`, description: "PRESTO FARE", amount: -8.12, category: "Transportation" }];
+    expect(await (await request.post("/api/finances/transactions", { data: { rows: overlap } })).json()).toEqual({ saved: 2, duplicates: 1 }); // two real same-day fares both kept
+    expect(await (await request.post("/api/finances/transactions", { data: { rows: overlap } })).json()).toEqual({ saved: 0, duplicates: 3 });
 
     await page.goto("/");
     await page.getByRole("button", { name: "Analysis", exact: true }).click();
@@ -39,7 +44,7 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await expect(page.getByText("$5,300").first()).toBeVisible();
     await expect(page.getByText(/of it paychecks\. Your income lines expected \$10,600/)).toBeVisible();
     await expect(page.getByText("Where the money came from")).toBeVisible();
-    await expect(page.getByText(/Transportation: \$1,027 this year .*no budget line/)).toBeVisible(); // 607.34 + 420 (Air Canada, not yet re-sorted)
+    await expect(page.getByText(/Transportation: \$1,044 this year .*no budget line/)).toBeVisible(); // 607.34 + 420 (Air Canada, not yet re-sorted) + 2 × 8.12
     // Each category is its own row; clicking shows its biggest purchases.
     await page.getByRole("cell", { name: "Dining out", exact: true }).click();
     await expect(page.getByText(/Biggest: SUSHI/)).toBeVisible();
@@ -56,7 +61,7 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await expect(page.getByText(/Updated 1 transaction/)).toBeVisible();
     await page.getByRole("button", { name: "Analysis", exact: true }).click();
     await expect(page.getByText(/Travel: \$420 this year .*no budget line/)).toBeVisible();
-    await expect(page.getByText(/Transportation: \$607 this year .*no budget line/)).toBeVisible();
+    await expect(page.getByText(/Transportation: \$624 this year .*no budget line/)).toBeVisible();
 
     // My finances: budget categories are a dropdown from the shared list; an old name offers its standard one.
     await page.getByRole("button", { name: "My finances", exact: true }).click();

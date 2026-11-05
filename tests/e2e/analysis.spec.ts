@@ -78,10 +78,14 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     // My finances: budget categories are a dropdown from the shared list; an old name offers its standard one.
     await page.getByRole("button", { name: "My finances", exact: true }).click();
     // Income from your transactions: the ACME paychecks (Sep 12, Oct 12) propose replacing the overlapping "Co-op" line.
-    await expect(page.getByText("Payroll deposits found")).toBeVisible();
-    await expect(page.getByText(/\$2,650\.00 monthly · 2 deposits/)).toBeVisible();
-    await page.getByRole("button", { name: "apply to “Co-op”" }).click();
-    await expect(page.getByText("matches “Co-op”")).toBeVisible();
+    // Each income line is one row; the ACME deposits match the "Co-op" line and can be applied to it.
+    await page.getByRole("button", { name: "use deposits" }).click();
+    await expect(page.getByText("deposits ✓")).toBeVisible();
+    // Expected take-home = what came in (Sep + Oct statements: 2 × 2,650) + income lines for the other 10 months
+    await expect(page.getByText(/expected take-home \$[\d,.]+ = \$5,300\.00 received \(Sep–Oct statements, 2 months\)/)).toBeVisible();
+    // ▸ opens a line's editor with labeled fields
+    await page.getByRole("button", { name: "Edit Summer job" }).click();
+    await expect(page.getByLabel("Income name")).toHaveValue("Summer job");
     // Budget lines show your actual average; a category you spend on without a line is offered with it.
     // The year budget: Jan–Dec per category (rent $900 Jan–Apr, $1,200 from May = 3,600 + 9,600 = $13,200 a year).
     await expect(page.getByText(`${y} budget & savings plan`)).toBeVisible();

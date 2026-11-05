@@ -104,3 +104,19 @@ describe("one-time payments (bonus)", () => {
     expect(incomeInMonth([bonus], "2027-07")).toBe(0);
   });
 });
+
+describe("paychecks you already know (from deposits)", () => {
+  it("a measured pay lag moves the last paycheck: start Mon Aug 31, first check Fri Sep 11 → one week behind → last check Dec 25 for a Dec 18 end", () => {
+    const ibm: IncomeStream = { id: "i", name: "IBM", amount: 1325.47, frequency: "weekly", kind: "coop", payDay: 5, employmentStart: "2026-08-31", employmentEnd: "2026-12-18", firstPayDate: "2026-09-11", lastPayDate: null };
+    const dec = paydays(ibm, "2026-12-01", "2026-12-31");
+    expect(dec).toEqual(["2026-12-04", "2026-12-11", "2026-12-18", "2026-12-25"]);
+    expect(paydays(ibm, "2026-01-01", "2026-12-31")).toHaveLength(16); // Sep 11 … Dec 25
+  });
+  it("known first/last paychecks are paid in full, not prorated by employment dates", () => {
+    // Tampa Brass: employed Jan 8 – Apr 8, but deposits ran every other Friday Jan 16 → Apr 24 (7 checks)
+    const tampa: IncomeStream = { id: "t", name: "Tampa Brass", amount: 486.49, frequency: "biweekly", kind: "salary", payDay: 5, employmentStart: "2026-01-08", employmentEnd: "2026-04-08", firstPayDate: "2026-01-16", lastPayDate: "2026-04-24" };
+    const checks = paychecks(tampa, "2026-01-01", "2026-12-31");
+    expect(checks.map((c) => c.date)).toEqual(["2026-01-16", "2026-01-30", "2026-02-13", "2026-02-27", "2026-03-13", "2026-03-27", "2026-04-10", "2026-04-24"].slice(0, 8));
+    expect(checks.every((c) => c.amount === 486.49)).toBe(true);
+  });
+});

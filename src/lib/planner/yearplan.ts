@@ -239,3 +239,28 @@ export function longTermGoals(p: Profile, plan: YearPlan | null, netWorth: numbe
       };
     });
 }
+
+/**
+ * Expected take-home for the calendar year, for budgeting: months with a complete
+ * statement use what actually came in (deposits marked Income); every other month
+ * (still ahead, or a missing statement) uses your income lines.
+ */
+export interface ExpectedIncome {
+  months: { month: YearMonth; amount: number; source: "statements" | "plan" }[];
+  received: number; // from statements
+  expected: number; // from income lines, for the other months
+  total: number;
+  statementMonths: YearMonth[];
+}
+
+export function expectedIncome(year: number, p: Profile, actuals: MonthActual[]): ExpectedIncome {
+  const plan = netIncome(p, `${year}-01`, 12).byMonth.map((m) => m.amount);
+  const by = new Map(actuals.map((a) => [a.month, a]));
+  const months = monthsOf(year).map((month, k) => {
+    const a = by.get(month);
+    return a?.status === "full" && a.income !== null ? { month, amount: round2(a.income), source: "statements" as const } : { month, amount: round2(plan[k]!), source: "plan" as const };
+  });
+  const received = sum(months.filter((m) => m.source === "statements").map((m) => m.amount));
+  const expected = sum(months.filter((m) => m.source === "plan").map((m) => m.amount));
+  return { months, received, expected, total: round2(received + expected), statementMonths: months.filter((m) => m.source === "statements").map((m) => m.month) };
+}

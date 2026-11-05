@@ -8,7 +8,7 @@ import { buildPlan, type Plan } from "@/lib/planner/plan";
 import { analyzeSpending, type SpendingAnalysis } from "@/lib/planner/spending";
 import { yearSummary, type YearSummary } from "@/lib/planner/summary";
 import { creditPaychecks, ensureYearPlan, noteBalanceEdit, syncPayDates, withPlanExpenses } from "@/lib/planner/sync";
-import { longTermGoals, plannedMonths, progress, type MonthActual } from "@/lib/planner/yearplan";
+import { expectedIncome, longTermGoals, plannedMonths, progress, type MonthActual } from "@/lib/planner/yearplan";
 import { suggestCategory, type MyRules } from "@/lib/planner/csv";
 import { assumptionsSchema, profileSchema } from "@/lib/planner/schema";
 import type { Assumptions, Profile } from "@/lib/planner/types";
@@ -390,6 +390,7 @@ export async function getYearProgress(year: number) {
     plan,
     planned: plan ? plannedMonths(plan, profile) : null,
     progress: plan ? progress(plan, profile, actuals, today) : null,
+    expectedIncome: expectedIncome(year, profile, actuals),
     longTerm: longTermGoals(profile, profile.yearPlans?.[today.slice(0, 4)] ?? plan, netWorth, today),
     netWorth: Math.round(netWorth * 100) / 100,
     years: Object.keys(profile.yearPlans ?? {}).sort(),

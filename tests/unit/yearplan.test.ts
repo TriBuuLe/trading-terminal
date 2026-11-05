@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Profile } from "@/lib/planner/types";
-import { budgetToExpenses, fillFrom, longTermGoals, newYearPlan, plannedMonths, progress, spreadAnnual, type MonthActual, type YearPlan } from "@/lib/planner/yearplan";
+import { budgetToExpenses, expectedIncome, fillFrom, longTermGoals, newYearPlan, plannedMonths, progress, spreadAnnual, type MonthActual, type YearPlan } from "@/lib/planner/yearplan";
 
 const profile: Profile = {
   country: "US", region: "NC", age: 21, crossBorder: false,
@@ -100,5 +100,21 @@ describe("long-term goals", () => {
     const [g] = longTermGoals(profile, plan, 3094.33, "2026-11-05");
     // Nov 2026 → Dec 2028 = 25 months; pace 700/month → 3,094.33 + 17,500 = 20,594.33; gap 29,405.67; needed (50,000 − 3,094.33) / 25 = 1,876.23
     expect(g).toMatchObject({ current: 3094.33, target: 50_000, monthsLeft: 25, pacePerMonth: 700, projected: 20_594.33, gap: 29_405.67, neededPerMonth: 1876.23 });
+  });
+});
+
+describe("expected take-home for the year", () => {
+  it("statements for complete months, income lines for the rest (missing statements use the plan)", () => {
+    // Lines: 3,000/month. Statements: Jan 3,200 (full), Feb thin (plan), Mar 2,900 (full), Nov running (plan)
+    const r = expectedIncome(2026, profile, [
+      { month: "2026-01", income: 3200, spent: 1000, invested: 0, status: "full" },
+      { month: "2026-02", income: 100, spent: 10, invested: 0, status: "thin" },
+      { month: "2026-03", income: 2900, spent: 1000, invested: 0, status: "full" },
+      { month: "2026-11", income: 500, spent: 100, invested: 0, status: "current" },
+    ]);
+    expect(r.statementMonths).toEqual(["2026-01", "2026-03"]);
+    expect(r.months[1]).toEqual({ month: "2026-02", amount: 3000, source: "plan" });
+    // received 6,100 + 10 months × 3,000 = 36,100
+    expect(r).toMatchObject({ received: 6100, expected: 30000, total: 36100 });
   });
 });

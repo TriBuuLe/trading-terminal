@@ -93,7 +93,9 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await expect(page.getByLabel(`Rent ${y}`, { exact: true })).toHaveValue("10800");
     await page.getByRole("button", { name: "Months for Rent" }).click();
     await expect(page.getByLabel("Rent Nov", { exact: true })).toHaveValue("1200");
-    await expect(page.getByLabel("Rent Sep", { exact: true })).toHaveCount(0); // a statement month shows the actual, not an input
+    // Every month shows your plan (input); statement months also show the actual underneath
+    await expect(page.getByLabel("Rent Sep", { exact: true })).toHaveValue("1200");
+    await expect(page.getByText("actual $0").first()).toBeVisible();
     // Take-home − spending = what's left to save + invest this year
     await expect(page.getByText(/take-home − \$[\d,]+ spending = \$[\d,-]+ to save \+ invest in \d{4}/)).toBeVisible();
     // A category you spend on without a budget row is offered with what you've spent on it so far

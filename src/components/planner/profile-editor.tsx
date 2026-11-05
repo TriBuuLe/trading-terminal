@@ -633,7 +633,7 @@ export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const cell = "num h-6 w-full min-w-0 rounded border border-input bg-background px-1 text-right text-[11px] outline-none focus:border-ring";
 const whole0 = (x: number) => `$${Math.round(x).toLocaleString("en-US")}`;
-const BGRID = "grid grid-cols-[minmax(10rem,1fr)_7.5rem_6.5rem_6rem_6rem]";
+const BGRID = "grid grid-cols-[minmax(10rem,1fr)_6rem_7.5rem_6.5rem_6rem_6rem]";
 
 interface YearData {
   income: YearIncome;
@@ -643,31 +643,29 @@ interface YearData {
   longTerm: { neededPerMonth: number }[];
 }
 
-/** A row's months: actual for months with a complete statement, inputs for the others. */
+/** A row's months: your plan for every month (input), and the actual from statements underneath where there is one. */
 function MonthStrip({ label, months, actual, full, onChange }: { label: string; months: number[]; actual: (number | null)[] | null; full: boolean[]; onChange: ((m: number[]) => void) | null }) {
   return (
     <div className="grid grid-cols-6 gap-1.5 py-1.5 pl-6 @3xl:grid-cols-12">
       {months.map((v, k) => (
-        <label key={k} className="group relative flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+        <div key={k} className="group flex flex-col gap-0.5 text-[10px] text-muted-foreground">
           <span className="flex justify-between">
-            {MONTH_ABBR[k]}
-            {full[k] ? (
-              <span className="text-[9px]">actual</span>
-            ) : (
-              onChange &&
-              k < 11 && (
-                <button type="button" tabIndex={-1} title="Copy to the rest of the year" aria-label={`${label} ${MONTH_ABBR[k]}: copy to the rest of the year`} onClick={() => onChange(months.map((x, j) => (j > k && !full[j] ? v : x)))} className="text-series-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
-                  →
-                </button>
-              )
+            <span>{MONTH_ABBR[k]}</span>
+            {onChange && k < 11 && (
+              <button type="button" tabIndex={-1} title="Copy this plan amount to the rest of the year" aria-label={`${label} ${MONTH_ABBR[k]}: copy to the rest of the year`} onClick={() => onChange(months.map((x, j) => (j > k ? v : x)))} className="text-series-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+                →
+              </button>
             )}
           </span>
-          {full[k] || !onChange ? (
-            <span className="num h-6 px-1 text-right text-[11px] leading-6 text-foreground">{full[k] ? whole0(actual?.[k] ?? 0) : whole0(v)}</span>
-          ) : (
+          {onChange ? (
             <input aria-label={`${label} ${MONTH_ABBR[k]}`} type="number" min={0} step={1} className={cell} value={Number.isFinite(v) ? v : 0} onChange={(e) => onChange(months.map((x, j) => (j === k ? Number(e.target.value) || 0 : x)))} />
+          ) : (
+            <span className="num h-6 px-1 text-right text-[11px] leading-6 text-foreground">{whole0(v)}</span>
           )}
-        </label>
+          <span className={cn("num text-right", full[k] ? "text-foreground/80" : "text-muted-foreground/50")} title={full[k] ? "Actual, from your statements" : "No complete statement for this month"}>
+            {full[k] ? `actual ${whole0(actual?.[k] ?? 0)}` : k < new Date().getMonth() ? "no statement" : ""}
+          </span>
+        </div>
       ))}
     </div>
   );
@@ -751,6 +749,7 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
           )}
           {label}
         </div>
+        <span className="num text-right text-muted-foreground">{edit ? whole0(edit.months.reduce((a, b) => a + b, 0)) : ""}</span>
         {edit ? (
           <input aria-label={`${key} ${year}`} type="number" min={0} className={cn(cell, "font-medium")} value={Math.round(value)} onChange={(e) => edit.onChange(setYear(edit.months, edit.act, Number(e.target.value) || 0))} />
         ) : (
@@ -765,10 +764,11 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
   );
 
   return (
-    <Section title={`${year} plan`} hint={`From your expected ${year} take-home. Months with a complete statement use actual numbers; editing a ${year} amount changes ${aheadLabel}. ▸ for each month.`}>
+    <Section title={`${year} plan`} hint={`Plan = the monthly amounts you enter (▸). ${year} expected = actual where you have a statement + your plan for the other months; editing it changes ${aheadLabel}.`}>
       <div className={cn(BGRID, "gap-2 pb-1 text-[10px] tracking-wider text-muted-foreground uppercase")}>
         <span className="pl-5">{year}</span>
-        <span className="text-right">{year} expected</span>
+        <span className="text-right" title="The total of the monthly amounts you entered">Plan</span>
+        <span className="text-right" title="Actual in months with a complete statement + your plan for the other months">{year} expected</span>
         <span className="text-right">So far</span>
         <span className="text-right">Avg so far</span>
         <span className="text-right">Proposed /mo</span>

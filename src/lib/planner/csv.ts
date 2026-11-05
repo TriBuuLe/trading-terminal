@@ -90,7 +90,7 @@ export const CATEGORY_RULES: [string, RegExp][] = [
   ["Utilities", /hydro|electric|enbridge|water|utility|duke energy/i],
   ["Subscriptions", /netflix|spotify|disney|apple\.com|icloud|prime video|youtube premium|crave|hulu|patreon|anthropic|claude\.ai|openai|chatgpt|github|notion|adobe|microsoft 365|google one|google storage/i],
   ["Entertainment", /cinema|regal|\bamc\b|cineplex|theatre|theater|steam|playstation|xbox|nintendo|ticketmaster|eventbrite|bowling/i],
-  ["Shopping", /amazon|best buy|ikea|winners|h&m|uniqlo|shopify|etsy|target\b|nike|adidas|zara|lululemon|sephora|e-commerce|ulta/i],
+  ["Shopping", /amazon|best buy|ikea|winners|h&m|uniqlo|shopify|etsy|target\b|nike|adidas|zara|lululemon|sephora|e-commerce|ulta|tommy hilfiger|ralph lauren|calvin klein|old navy|\bgap\b|nordstrom|macy|tj ?maxx|marshalls|ross stores|kohl|foot locker|urban outfitters|american eagle|abercrombie|hollister/i],
   ["Health", /pharma|shoppers drug|rexall|cvs|walgreens|clinic|dental|physio/i],
   ["Education", /tuition|university|college|bookstore|coursera/i],
   ["Insurance", /insurance|assurance/i],

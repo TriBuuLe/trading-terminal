@@ -9,7 +9,7 @@ import { money } from "@/lib/format";
 import type { YearSummary } from "@/lib/planner/summary";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorState, LoadingRows, Tag } from "../terminal/bits";
-import { BudgetCheck, SpendingTable, type PlanResponseExtras } from "./budget-check";
+import { SpendingTable, type PlanResponseExtras } from "./budget-check";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const C = { income: "#199e70", spent: "#d95926", budget: "#8b8d93", grid: "#1f2125", axis: "#2a2c31", tick: "#8b8d93" };
@@ -67,10 +67,7 @@ export function Analysis() {
       </div>
       {q.isPending ? <LoadingRows rows={8} /> : q.isError ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : q.data.summary && <YearView s={q.data.summary} />}
       {plan.data?.spending && plan.data.plan !== null && (
-        <>
-          <BudgetCheck x={plan.data as PlanResponseExtras} />
-          <SpendingTable x={plan.data as PlanResponseExtras} budgetLines={plan.data.budgetLines} />
-        </>
+        <SpendingTable x={plan.data as PlanResponseExtras} budgetLines={plan.data.budgetLines} />
       )}
     </div>
   );

@@ -80,7 +80,7 @@ export function BudgetCheck({ x }: { x: PlanResponseExtras }) {
         <BasisToggle x={x} />
       </div>
       {s.completeMonths.length === 0 && s.totals.monthToDate === 0 ? (
-        <p className="text-[11px] text-muted-foreground">Import bank or card CSVs under Transactions to compare what you actually spend with your budget.</p>
+        <p className="text-[11px] text-muted-foreground">Import bank or card CSVs under Transactions, then see Analysis to compare what you actually spend with your budget.</p>
       ) : (
         <>
           <div className="num grid grid-cols-3 gap-2">
@@ -125,12 +125,12 @@ export function BudgetCheck({ x }: { x: PlanResponseExtras }) {
           {w}
         </p>
       ))}
-      <p className="mt-1 text-[10px] text-muted-foreground">Full breakdown and category matching under Transactions.</p>
+      <p className="mt-1 text-[10px] text-muted-foreground">Full breakdown and category matching under Analysis.</p>
     </section>
   );
 }
 
-/** Full table for the Transactions tab, with category matching for unbudgeted spending. */
+/** Full table for the Analysis tab, with category matching for unbudgeted spending. */
 export function SpendingTable({ x, budgetLines }: { x: PlanResponseExtras; budgetLines: string[] }) {
   const { mapCategory } = useBudgetActions();
   const s = x.spending;
@@ -159,7 +159,7 @@ export function SpendingTable({ x, budgetLines }: { x: PlanResponseExtras; budge
             </tr>
           </thead>
           <tbody className="num">
-            {s.rows.map((r) => (
+            {s.rows.filter((r) => !(r.status === "unplanned" && !r.actualAvg && !r.monthToDate && !r.lastMonth)).map((r) => (
               <tr key={(r.planCategory ?? "") + r.actualCategories.join(",")} className="border-t border-border/50 text-right">
                 <td className="py-1 text-left font-sans">
                   {r.planCategory ?? (

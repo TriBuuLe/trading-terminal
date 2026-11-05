@@ -16,6 +16,7 @@ import type { YearTax } from "@/lib/tax/calc";
 import type { YearSummary } from "@/lib/planner/summary";
 import type { AccountType, Profile } from "@/lib/planner/types";
 import { addBudgetRow, fillFrom, newYearPlan, plannedMonths, spreadAnnual, sum, type YearPlan } from "@/lib/planner/yearplan";
+import { setAhead } from "@/lib/ai/actions";
 import { cn } from "@/lib/utils";
 
 /** Editable sections of the financial profile, shared by the onboarding wizard and "My finances". */
@@ -598,12 +599,17 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
   const range = s?.fullMonths.length ? `${MONTH_ABBR[Number(s.fullMonths[0]!.slice(5)) - 1]}–${MONTH_ABBR[Number(s.fullMonths.at(-1)!.slice(5)) - 1]} (${s.fullMonths.length} full months)` : "";
   const avgOf = (cat: string) => s?.categories.find((c) => c.category === cat)?.avgPerMonth ?? null;
   // Long-term goals' pace needed, for the savings target behind the wants proposal.
-  const yq = useQuery({ queryKey: ["year"], queryFn: () => api<{ longTerm: { neededPerMonth: number }[] } | null>("/api/finances/year") });
+  const yq = useQuery({ queryKey: ["year"], queryFn: () => api<{ longTerm: { neededPerMonth: number }[]; progress: { remaining: { months: string[] } } | null } | null>("/api/finances/year") });
+  // Proposals change only the months still ahead; months with statements keep the plan you set.
+  const firstAhead = yq.data?.progress?.remaining.months[0];
+  const openFrom = firstAhead ? Number(firstAhead.slice(5, 7)) - 1 : 0;
+  const aheadLabel = openFrom > 0 ? `${MONTH_ABBR[openFrom]}–Dec` : "all year";
+  const useProposed = (months: number[], annual: number) => (openFrom > 0 ? setAhead(months, round2(annual / 12), openFrom) : spreadAnnual(annual));
   const goalsNeedYear = round2((yq.data?.longTerm ?? []).reduce((t, g) => t + g.neededPerMonth, 0) * 12);
   const debtYear = p.debts.reduce((t, d) => t + Math.min(d.minPayment, d.balance), 0) * 12;
   const prop = proposeWants({ budget: plan.budget, income, debtMinimumsYear: debtYear, goalsNeedYear, statementAvg: avgOf });
   const proposedOf = (cat: string) => prop.rows.find((r) => r.category === cat)?.proposed ?? null;
-  const applyProposal = () => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r) => (r.kind === "want" && proposedOf(r.category) !== null ? { ...r, months: spreadAnnual(proposedOf(r.category)!) } : r)) }));
+  const applyProposal = () => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r) => (r.kind === "want" && proposedOf(r.category) !== null ? { ...r, months: useProposed(r.months, proposedOf(r.category)!) } : r)) }));
 
   const missing = SPENDING_CATEGORIES.filter((c) => !plan.budget.some((r) => r.category === c.name)).sort((a, b) => (avgOf(b.name) ?? 0) - (avgOf(a.name) ?? 0));
   const rows = [...plan.budget].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "need" ? -1 : 1));
@@ -676,7 +682,7 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
             est: avgOf(r.category) !== null ? `${whole0(avgOf(r.category)!)} × 12 = ${whole0(avgOf(r.category)! * 12)}` : "—",
             proposed:
               r.kind === "want" && proposedOf(r.category) !== null ? (
-                <button type="button" className="text-series-1 hover:underline" title="Use the proposed annual budget for this category" onClick={() => setRow(r.category, spreadAnnual(proposedOf(r.category)!))}>
+                <button type="button" className="text-series-1 hover:underline" title={`Use ${whole0(proposedOf(r.category)! / 12)}/mo for ${aheadLabel} (proposed ${whole0(proposedOf(r.category)!)}/yr ÷ 12)`} onClick={() => setRow(r.category, useProposed(r.months, proposedOf(r.category)!))}>
                   {whole0(proposedOf(r.category)!)}
                 </button>
               ) : null,
@@ -696,7 +702,7 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
           </span>
           {prop.freed > 0 && <span className="text-up">+{whole0(prop.freed)}/yr to save or invest</span>}
           <button type="button" className="rounded border border-border px-2 py-0.5 text-foreground hover:bg-accent" onClick={applyProposal}>
-            Use proposed wants
+            Use proposed wants ({aheadLabel})
           </button>
         </div>
       )}

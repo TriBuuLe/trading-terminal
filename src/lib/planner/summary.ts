@@ -1,5 +1,5 @@
 import { expenseInMonth, round2 } from "./core";
-import { merchantName, PEER_PAYMENT } from "./csv";
+import { BROKERAGE, merchantName, PEER_PAYMENT } from "./csv";
 
 export { merchantName };
 import { netIncome } from "./net";
@@ -93,8 +93,44 @@ export interface YearSummary {
   categories: CategoryRow[];
   /** Biggest merchants / people across all spending. */
   topMerchants: Merchant[];
+  /**
+   * Money moved to your investment account (Fidelity...) and back. Not spending:
+   * it's still yours. net = sent − came back. "What you have" = bank + net invested
+   * (contributions, not market value).
+   */
+  investments: {
+    year: { sent: number; back: number; net: number };
+    allTime: { sent: number; back: number; net: number; since: string | null };
+    moves: { date: string; description: string; amount: number }[]; // + = sent to investing, − = came back
+    bank: number; // cash/savings accounts in My finances
+    bankAccounts: string[];
+    total: number;
+  };
   attention: Attention[];
   dataChecks: string[];
+}
+
+function investmentsOf(all: SummaryTx[], year: number, p: Profile, currentMonth: string): YearSummary["investments"] {
+  const moves = all
+    .filter((t) => t.category === "Transfers" && BROKERAGE.test(t.description) && t.date.slice(0, 7) <= currentMonth)
+    .map((t) => ({ date: t.date, description: t.description, amount: round2(-t.amount) }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const tally = (xs: typeof moves) => {
+    const sent = xs.filter((m) => m.amount > 0).reduce((s, m) => s + m.amount, 0);
+    const back = -xs.filter((m) => m.amount < 0).reduce((s, m) => s + m.amount, 0);
+    return { sent: round2(sent), back: round2(back), net: round2(sent - back) };
+  };
+  const cash = p.accounts.filter((a) => a.type === "CASH" || a.type === "HISA");
+  const bank = round2(cash.reduce((s, a) => s + a.balance, 0));
+  const allTime = tally(moves);
+  return {
+    year: tally(moves.filter((m) => m.date.startsWith(`${year}-`))),
+    allTime: { ...allTime, since: moves.at(-1)?.date ?? null },
+    moves,
+    bank,
+    bankAccounts: cash.map((a) => a.name),
+    total: round2(bank + allTime.net),
+  };
 }
 
 function groupMerchants(tx: SummaryTx[]): Merchant[] {
@@ -282,6 +318,7 @@ export function yearSummary(i: { profile: Profile; txs: SummaryTx[]; year: numbe
     saved: { actual: round2(actualIncome - totalSpent), ratePct: actualIncome > 0 ? round2(((actualIncome - totalSpent) / actualIncome) * 100) : null },
     categories,
     topMerchants: groupMerchants(spendTx).slice(0, 25),
+    investments: investmentsOf(i.txs, i.year, p, currentMonth),
     attention,
     dataChecks,
   };

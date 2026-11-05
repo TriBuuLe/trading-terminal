@@ -29,6 +29,8 @@ test("analysis: take-home for the year, spending by category, needs attention", 
       { date: `${y}-10-04`, description: "MR. TIRE", amount: -607.34, category: "Transportation" },
       { date: `${y}-10-12`, description: "NIKE", amount: -91.38, category: "Shopping" },
       { date: `${y}-10-20`, description: "AIR CANADA 0142", amount: -420, category: "Transportation" }, // saved before Travel existed
+      { date: `${y}-09-11`, description: "FID BKG SVC LLC DES:MONEYLINE", amount: -500, category: "Transfers" },
+      { date: `${y}-10-07`, description: "FID BKG SVC LLC DES:MONEYLINE", amount: 120, category: "Transfers" },
     ];
     expect((await request.post("/api/finances/transactions", { data: { rows } })).ok()).toBe(true);
     // Uploading the same statement again saves nothing; an overlapping one saves only the new rows.
@@ -44,6 +46,9 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await expect(page.getByText("$5,300").first()).toBeVisible();
     await expect(page.getByText(/of it paychecks\. Your income lines expected \$10,600/)).toBeVisible();
     await expect(page.getByText("Where the money came from")).toBeVisible();
+    // Investments: 500 sent − 120 back = 380 invested, not spending.
+    await expect(page.getByText("Investments & what you have")).toBeVisible();
+    await expect(page.getByText("$380.00").first()).toBeVisible();
     await expect(page.getByText(/Transportation: \$1,044 this year .*no budget line/)).toBeVisible(); // 607.34 + 420 (Air Canada, not yet re-sorted) + 2 × 8.12
     // Where the money went: one line per category with its total; clicking shows merchants and transactions.
     await expect(page.getByText(/Where your \$[\d,]+ went/)).toBeVisible();

@@ -6,6 +6,7 @@ import { Fragment, useState } from "react";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
+import { merchantName } from "@/lib/planner/csv";
 import type { CategoryRow, IncomeSource, YearSummary } from "@/lib/planner/summary";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorState, LoadingRows, Tag } from "../terminal/bits";
@@ -103,6 +104,8 @@ function YearView({ s }: { s: YearSummary }) {
           sub={n ? <>{whole(avgIncome)} in − {whole(s.spending.avgPerMonth)} out, avg of {n} full month{n === 1 ? "" : "s"} ({range})</> : undefined}
         />
       </div>
+
+      <Investments s={s} />
 
       <Breakdown s={s} />
 
@@ -280,6 +283,80 @@ function CategoryTable({ s }: { s: YearSummary }) {
         <b>over / under</b> = your monthly average is more than 10% above / below the budget line. <b>no budget</b> = you spend on it but have no budget line (add one in My finances).{" "}
         <b>no transactions</b> = budgeted, but nothing imported (paid from an account you haven&apos;t imported?).
       </p>
+    </Card>
+  );
+}
+
+/** Money moved to your investment account and back, and what you have in total. */
+function Investments({ s }: { s: YearSummary }) {
+  const v = s.investments;
+  const [all, setAll] = useState(false);
+  const shown = all ? v.moves : v.moves.slice(0, 6);
+  return (
+    <Card title="Investments & what you have">
+      <div className="grid gap-3 md:grid-cols-[1.1fr_1fr]">
+        <div>
+          <div className="num grid grid-cols-3 gap-2 text-xs">
+            <div>
+              <div className="text-[10px] tracking-wider text-muted-foreground uppercase">Sent to investing</div>
+              <div className="text-base">{money(v.allTime.sent)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] tracking-wider text-muted-foreground uppercase">Came back</div>
+              <div className="text-base">−{money(v.allTime.back)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] tracking-wider text-muted-foreground uppercase">Invested (net)</div>
+              <div className="text-base font-semibold">{money(v.allTime.net)}</div>
+            </div>
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {v.allTime.since ? <>Since {v.allTime.since} (all your imported transactions). In {s.year}: {money(v.year.sent)} sent, {money(v.year.back)} back.</> : "No transfers to an investment account (Fidelity, Schwab, Robinhood…) in your transactions."}{" "}
+            These aren&apos;t spending: the money is still yours.
+          </p>
+          {v.moves.length > 0 && (
+            <table className="num mt-2 w-full text-[11px]">
+              <tbody>
+                {shown.map((m, k) => (
+                  <tr key={k} className="border-t border-border/40">
+                    <td className="py-0.5 pr-2 text-muted-foreground">{m.date}</td>
+                    <td className="font-sans">{m.amount > 0 ? "Sent to" : "Back from"} {merchantName(m.description)}</td>
+                    <td className={cn("text-right", m.amount < 0 && "text-up")}>{m.amount > 0 ? money(m.amount) : `−${money(-m.amount)}`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {v.moves.length > 6 && (
+            <button type="button" className="mt-1 text-[10px] text-series-1 hover:underline" onClick={() => setAll(!all)}>
+              {all ? "show fewer" : `show all ${v.moves.length}`}
+            </button>
+          )}
+        </div>
+        <div className="rounded-md bg-background/60 p-2">
+          <div className="text-[10px] tracking-wider text-muted-foreground uppercase">What you have now</div>
+          <table className="num mt-1 w-full text-xs">
+            <tbody>
+              <tr>
+                <td className="py-0.5 font-sans">Bank ({v.bankAccounts.join(", ") || "no cash account"})</td>
+                <td className="text-right">{money(v.bank)}</td>
+              </tr>
+              <tr>
+                <td className="py-0.5 font-sans">+ Invested (net)</td>
+                <td className="text-right">{money(v.allTime.net)}</td>
+              </tr>
+              <tr className="border-t border-border font-semibold">
+                <td className="py-1 font-sans">Total</td>
+                <td className="text-right text-base">{money(v.total)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            The bank balance is the one you entered under My finances → Accounts: keep it matching your bank app. Invested is what you put in minus what came back (not its market
+            value). Money people owe you isn&apos;t included until they pay it back.
+          </p>
+        </div>
+      </div>
     </Card>
   );
 }

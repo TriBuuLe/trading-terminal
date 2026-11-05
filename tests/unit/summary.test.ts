@@ -118,3 +118,28 @@ describe("breakdown by merchant", () => {
     expect(s.topMerchants[0]).toEqual({ name: "Best Buy", total: 2895, count: 2, category: "Shopping" });
   });
 });
+
+describe("investments", () => {
+  it("sent to the investment account minus what came back; what you have = bank + invested", () => {
+    const withBank = { ...profile, accounts: [{ id: "c", name: "Chequing", type: "CASH" as const, balance: 3094.33 }, { id: "r", name: "Roth", type: "ROTH_IRA" as const, balance: 900 }] };
+    const s = yearSummary({
+      profile: withBank,
+      year: 2026,
+      today: "2026-11-05",
+      txs: [
+        { date: "2025-12-15", description: "FID BKG SVC LLC DES:MONEYLINE", amount: -200, category: "Transfers" },
+        { date: "2026-08-24", description: "FID BKG SVC LLC DES:MONEYLINE", amount: -510, category: "Transfers" },
+        { date: "2026-08-31", description: "FID BKG SVC LLC DES:MONEYLINE", amount: -500, category: "Transfers" },
+        { date: "2026-09-11", description: "FID BKG SVC LLC DES:MONEYLINE", amount: -490, category: "Transfers" },
+        { date: "2026-10-07", description: "FID BKG SVC LLC DES:MONEYLINE", amount: 508.99, category: "Transfers" },
+        { date: "2026-10-16", description: "MOBILE PAYMENT - THANK YOU", amount: 510.7, category: "Transfers" }, // card payment, not investing
+      ],
+    });
+    // 2026: sent 510 + 500 + 490 = 1,500, back 508.99 → net 991.01; all time + 200 = 1,191.01
+    expect(s.investments.year).toEqual({ sent: 1500, back: 508.99, net: 991.01 });
+    expect(s.investments.allTime).toEqual({ sent: 1700, back: 508.99, net: 1191.01, since: "2025-12-15" });
+    // bank = cash accounts only (3,094.33); total = 3,094.33 + 1,191.01 = 4,285.34
+    expect(s.investments).toMatchObject({ bank: 3094.33, bankAccounts: ["Chequing"], total: 4285.34 });
+    expect(s.investments.moves[0]).toEqual({ date: "2026-10-07", description: "FID BKG SVC LLC DES:MONEYLINE", amount: -508.99 });
+  });
+});

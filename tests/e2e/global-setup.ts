@@ -15,7 +15,7 @@ export default async function setup() {
   const { db, client } = createDb(E2E_DATABASE_URL, { max: 1 });
   await migrate(db, { migrationsFolder: "./drizzle" });
   await client.unsafe(
-    "truncate demo_state, watchlist_items, watchlists, journal_entries, orders, fills, equity_snapshots, alerts, alert_events, api_cache, rate_limits, api_usage, settings, assets restart identity cascade",
+    "truncate demo_state, watchlist_items, watchlists, journal_entries, orders, fills, equity_snapshots, alerts, alert_events, api_cache, rate_limits, api_usage, settings, assets, fin_records, fin_transactions, plan_versions restart identity cascade",
   );
   await client.end();
 }

@@ -1,4 +1,4 @@
-import { round2 } from "./core";
+import { expenseInMonth, round2 } from "./core";
 import type { Expense, YearMonth } from "./types";
 
 /**
@@ -134,22 +134,29 @@ export function analyzeSpending(i: {
     return avg > planned + tol ? "over" : avg < planned - tol ? "under" : "on track";
   };
 
-  const rows: CategoryRow[] = i.expenses.map((e) => {
+  // One row per budget category. Lines can have date ranges (a 4-month lease,
+  // summer groceries), so the budget compared is the average budget over the SAME
+  // complete months the actual average covers (or this month's if none yet).
+  const budgetCats = [...new Map(i.expenses.map((e) => [e.category, e])).values()];
+  const budgetFor = (cat: string) =>
+    completeMonths.length ? completeMonths.reduce((s, m) => s + expenseInMonth(i.expenses, m, cat), 0) / completeMonths.length : expenseInMonth(i.expenses, currentMonth, cat);
+  const rows: CategoryRow[] = budgetCats.map((e) => {
     const cats = groups.get(e.category) ?? [];
     const avg = cats.length ? avgFor(cats) : null;
     const mtd = cats.length ? sumFor(currentMonth, cats) : 0;
+    const planned = round2(budgetFor(e.category));
     return {
       planCategory: e.category,
       actualCategories: cats,
       manualCategories: cats.filter((c) => i.categoryMap?.[c] !== undefined),
       kind: e.kind,
-      planned: e.monthly,
+      planned,
       actualAvg: avg === null ? null : round2(avg),
       lastMonth: cats.length && lastComplete ? round2(sumFor(lastComplete, cats)) : null,
       monthToDate: round2(mtd),
       pace: cats.length && pace(mtd) !== null ? round2(pace(mtd)!) : null,
-      diff: avg === null ? null : round2(avg - e.monthly),
-      status: cats.length ? status(e.monthly, avg) : "no data",
+      diff: avg === null ? null : round2(avg - planned),
+      status: cats.length ? status(planned, avg) : "no data",
     };
   });
   for (const c of unplanned) {
@@ -182,10 +189,11 @@ export function analyzeSpending(i: {
   if (actualCats.some((c) => norm(c) === "uncategorized")) warnings.push("Some transactions are Uncategorized: pick a category so they count against the right budget line.");
 
   const sum = (f: (r: CategoryRow) => number | null) => rows.reduce<number | null>((s, r) => (f(r) === null ? s : (s ?? 0) + f(r)!), null);
+  // Categories with data → one line at the actual average; without data → the original (possibly date-ranged) budget lines.
   const actualBasisExpenses: Expense[] = [
-    ...i.expenses.map((e) => {
+    ...budgetCats.flatMap((e) => {
       const r = rows.find((x) => x.planCategory === e.category)!;
-      return r.actualAvg === null ? e : { ...e, monthly: Math.max(0, r.actualAvg) };
+      return r.actualAvg === null ? i.expenses.filter((x) => x.category === e.category) : [{ id: `actual:${e.category}`, category: e.category, kind: e.kind, monthly: Math.max(0, r.actualAvg) }];
     }),
     ...rows
       .filter((r) => r.status === "unplanned" && r.actualAvg !== null && r.actualAvg > 0)
@@ -198,8 +206,9 @@ export function analyzeSpending(i: {
     daysInMonth: dim,
     rows,
     totals: {
-      planned: round2(i.expenses.reduce((s, e) => s + e.monthly, 0)),
-      actualAvg: completeMonths.length ? round2(actualBasisExpenses.reduce((s, e) => s + e.monthly, 0)) : null,
+      planned: round2(rows.reduce((s, r) => s + r.planned, 0)),
+      // Actual where there's data; the budget where a line has no transactions (e.g. rent paid elsewhere).
+      actualAvg: completeMonths.length ? round2(rows.reduce((s, r) => s + (r.actualAvg ?? r.planned), 0)) : null,
       monthToDate: round2(rows.reduce((s, r) => s + r.monthToDate, 0)),
       pace: sum((r) => r.pace) === null ? null : round2(sum((r) => r.pace)!),
     },

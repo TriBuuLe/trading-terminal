@@ -29,6 +29,10 @@ export interface Expense {
   category: string;
   monthly: number;
   kind: "need" | "want";
+  /** Optional date range (e.g. a 4-month lease). Several lines can share a category. */
+  startMonth?: YearMonth | null;
+  endMonth?: YearMonth | null;
+  repeatsYearly?: boolean;
 }
 
 export interface Debt {

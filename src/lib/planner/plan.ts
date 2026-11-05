@@ -1,4 +1,5 @@
 import {
+  averageExpenses,
   cashFlow,
   cutSuggestions,
   emergencyFundTarget,
@@ -109,7 +110,9 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
   // Take-home income: "before tax" lines are converted with the year's estimated taxes.
   const net = netIncome(p, asOf, 12);
   const income = net.average;
-  const cf = cashFlow(income, p.expenses, p.debts);
+  // Budget averaged over the next 12 months (date-ranged lines like a 4-month lease).
+  const expenses = averageExpenses(p.expenses, asOf, 12);
+  const cf = cashFlow(income, expenses, p.debts);
   const score = riskScore(p.risk);
   const effective = p.riskOverride ?? score;
   const equityLong = equityForRisk(effective);
@@ -288,11 +291,11 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
     incomeNotes: net.notes,
     cashFlow: cf,
     spending: {
-      needs: p.expenses.filter((e) => e.kind === "need" && e.monthly > 0).map((e) => ({ category: e.category, monthly: e.monthly })),
-      wants: p.expenses.filter((e) => e.kind === "want" && e.monthly > 0).map((e) => ({ category: e.category, monthly: e.monthly })),
+      needs: expenses.filter((e) => e.kind === "need" && e.monthly > 0).map((e) => ({ category: e.category, monthly: e.monthly })),
+      wants: expenses.filter((e) => e.kind === "want" && e.monthly > 0).map((e) => ({ category: e.category, monthly: e.monthly })),
     },
     savingsTarget,
-    cuts: cutSuggestions(p.expenses, savingsTarget - Math.max(0, cf.available)),
+    cuts: cutSuggestions(expenses, savingsTarget - Math.max(0, cf.available)),
     emergency: { ...ef, current: round2(efCurrent) },
     risk: { score, effective, warning: overrideWarning(p.risk, p.riskOverride), equityLong: round2(equityLong) },
     debt,

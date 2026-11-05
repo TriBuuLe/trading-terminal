@@ -309,19 +309,43 @@ export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
   return (
     <Section
       title="Monthly spending"
-      hint="Needs = must pay; wants = could cut. You can also import bank CSVs under Transactions to see real numbers."
+      hint="Needs = must pay; wants = could cut. Leave the dates blank for every month. When an amount changes (a new lease, cheaper summer groceries), give each period its own line with the same category and its own dates; “+ next period” does that. Your real spending is under Analysis."
       onAdd={() => set((x) => ({ ...x, expenses: [...x.expenses, { id: uid(), category: "Other", monthly: 0, kind: "want" }] }))}
     >
       <div className="space-y-1.5">
         {p.expenses.map((e) => (
-          <div key={e.id} className="flex items-center gap-2 text-xs">
+          <div key={e.id} className="flex flex-wrap items-center gap-2 text-xs">
             <input aria-label="Category" className={cn(inp, "w-40")} value={e.category} onChange={(ev) => upd(e.id, { category: ev.target.value })} />
             <Num label="Monthly amount" value={e.monthly} onChange={(n) => upd(e.id, { monthly: n })} />
             <select aria-label="Need or want" className={inp} value={e.kind} onChange={(ev) => upd(e.id, { kind: ev.target.value as "need" | "want" })}>
               <option value="need">need</option>
               <option value="want">want</option>
             </select>
+            <span className="text-muted-foreground">from</span>
+            <input aria-label="Expense start month" type="month" className={inp} value={e.startMonth ?? ""} onChange={(ev) => upd(e.id, { startMonth: ev.target.value || null })} />
+            <span className="text-muted-foreground">to</span>
+            <input aria-label="Expense end month" type="month" className={inp} value={e.endMonth ?? ""} onChange={(ev) => upd(e.id, { endMonth: ev.target.value || null })} />
+            <label className="flex items-center gap-1 text-muted-foreground" title="Same months every year, e.g. higher heating Dec–Feb">
+              <input type="checkbox" checked={e.repeatsYearly ?? false} disabled={!e.startMonth || !e.endMonth} onChange={(ev) => upd(e.id, { repeatsYearly: ev.target.checked })} />
+              every year
+            </label>
+            <button
+              type="button"
+              className="text-[10px] text-series-1 hover:underline"
+              title="Add another line for the same category, starting after this one ends (e.g. the next lease)"
+              onClick={() =>
+                set((x) => {
+                  const start = e.endMonth ? addMonths(e.endMonth, 1) : null;
+                  const at = x.expenses.findIndex((y) => y.id === e.id);
+                  const next = { id: uid(), category: e.category, monthly: e.monthly, kind: e.kind, startMonth: start, endMonth: null };
+                  return { ...x, expenses: [...x.expenses.slice(0, at + 1), next, ...x.expenses.slice(at + 1)] };
+                })
+              }
+            >
+              + next period
+            </button>
             <Del label="Remove expense" onClick={() => set((x) => ({ ...x, expenses: x.expenses.filter((y) => y.id !== e.id) }))} />
+            {!e.repeatsYearly && e.startMonth && e.endMonth && e.endMonth < e.startMonth && <span className="text-down">ends before it starts</span>}
           </div>
         ))}
       </div>

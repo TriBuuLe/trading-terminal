@@ -6,6 +6,7 @@ import { rollForward, type MonthActuals, type RollEntry } from "@/lib/planner/au
 import { addMonths } from "@/lib/planner/core";
 import { buildPlan, type Plan } from "@/lib/planner/plan";
 import { analyzeSpending, type SpendingAnalysis } from "@/lib/planner/spending";
+import { yearSummary, type YearSummary } from "@/lib/planner/summary";
 import { assumptionsSchema, profileSchema } from "@/lib/planner/schema";
 import type { Assumptions, Profile } from "@/lib/planner/types";
 import { etParts } from "@/lib/time";
@@ -113,6 +114,14 @@ export interface PlanResult {
 export async function getSpending(profile: Profile): Promise<SpendingAnalysis> {
   const txs = await listTransactions();
   return analyzeSpending({ expenses: profile.expenses, txs, today: etParts(new Date()).date, categoryMap: profile.categoryMap });
+}
+
+/** One calendar year: take-home, spending, where it went, what needs attention. */
+export async function getYearSummary(year: number): Promise<YearSummary | null> {
+  const profile = await getProfile();
+  if (!profile) return null;
+  const txs = await listTransactions();
+  return yearSummary({ profile, txs, year, today: etParts(new Date()).date, categoryMap: profile.categoryMap });
 }
 
 export async function getPlan(opts: { profile?: Profile; runs?: number } = {}): Promise<PlanResult | null> {

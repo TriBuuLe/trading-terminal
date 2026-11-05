@@ -18,7 +18,15 @@ export const incomeSchema = z.object({
   annualRaisePct: z.number().min(0).max(50).optional(),
   repeatsYearly: z.boolean().optional(),
 });
-export const expenseSchema = z.object({ id, category: z.string().trim().min(1).max(40), monthly: money, kind: z.enum(["need", "want"]) });
+export const expenseSchema = z.object({
+  id,
+  category: z.string().trim().min(1).max(40),
+  monthly: money,
+  kind: z.enum(["need", "want"]),
+  startMonth: ym.nullable().optional(),
+  endMonth: ym.nullable().optional(),
+  repeatsYearly: z.boolean().optional(),
+});
 export const debtSchema = z.object({ id, name: z.string().trim().min(1).max(60), balance: money, aprPct: z.number().min(0).max(100), minPayment: money });
 export const accountSchema = z.object({
   id,
@@ -84,6 +92,11 @@ export function profileProblems(p: z.infer<typeof profileSchema>): { path: strin
     // (A repeating term may wrap across New Year, e.g. Nov–Feb.)
     if (!i.repeatsYearly && i.startMonth && i.endMonth && i.endMonth < i.startMonth) {
       out.push({ path: `income:${i.id}`, message: `“${i.name}” ends (${i.endMonth}) before it starts (${i.startMonth}), so it never counts. Fix the dates.` });
+    }
+  }
+  for (const e of p.expenses) {
+    if (!e.repeatsYearly && e.startMonth && e.endMonth && e.endMonth < e.startMonth) {
+      out.push({ path: `expense:${e.id}`, message: `“${e.category}” ends (${e.endMonth}) before it starts (${e.startMonth}), so it never counts. Fix the dates.` });
     }
   }
   return out;

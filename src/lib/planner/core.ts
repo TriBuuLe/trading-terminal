@@ -45,7 +45,13 @@ export function incomeInMonth(streams: IncomeStream[], month: YearMonth): number
  *  - repeatsYearly: the same calendar months every year from the start year on
  *    (e.g. a Sep–Dec co-op term; Nov–Feb wraps across New Year)
  */
-export function isActive(s: IncomeStream, month: YearMonth): boolean {
+export interface Windowed {
+  startMonth?: YearMonth | null;
+  endMonth?: YearMonth | null;
+  repeatsYearly?: boolean;
+}
+
+export function isActive(s: Windowed, month: YearMonth): boolean {
   if (s.repeatsYearly && s.startMonth && s.endMonth) {
     if (month < s.startMonth) return false;
     const m = Number(month.slice(5, 7));
@@ -56,6 +62,26 @@ export function isActive(s: IncomeStream, month: YearMonth): boolean {
   if (s.startMonth && month < s.startMonth) return false;
   if (s.endMonth && month > s.endMonth) return false;
   return true;
+}
+
+/** Budgeted spending in a month (only lines active that month), optionally for one category. */
+export function expenseInMonth(expenses: Expense[], month: YearMonth, category?: string): number {
+  return expenses.filter((e) => (category === undefined || e.category === category) && isActive(e, month)).reduce((s, e) => s + e.monthly, 0);
+}
+
+/**
+ * Expenses averaged over the next `n` months, one line per category: a 4-month
+ * lease at $900 then $1,150 becomes the average monthly rent for the plan.
+ */
+export function averageExpenses(expenses: Expense[], from: YearMonth, n = 12): Expense[] {
+  const cats = [...new Map(expenses.map((e) => [e.category, e])).values()];
+  return cats
+    .map((e) => {
+      let sum = 0;
+      for (let i = 0; i < n; i++) sum += expenseInMonth(expenses, addMonths(from, i), e.category);
+      return { id: `avg:${e.category}`, category: e.category, kind: e.kind, monthly: round2(sum / n) };
+    })
+    .filter((e) => e.monthly > 0);
 }
 
 /** Income for each of the next `n` months (for the timeline). */

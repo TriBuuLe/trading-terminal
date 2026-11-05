@@ -1,4 +1,4 @@
-import { addMonths, round2 } from "./core";
+import { addMonths, expenseInMonth, round2 } from "./core";
 import { netIncome } from "./net";
 import type { Profile, YearMonth } from "./types";
 
@@ -42,7 +42,7 @@ export function lastCompletedMonth(today: YearMonth): YearMonth {
 export function rollMonth(p: Profile, month: YearMonth, actual?: MonthActuals | null): { profile: Profile; entry: RollEntry } {
   const ar = p.autoRoll!;
   const plannedIncome = netIncome(p, month, 1).byMonth[0]!.amount;
-  const plannedSpending = p.expenses.reduce((s, e) => s + e.monthly, 0);
+  const plannedSpending = expenseInMonth(p.expenses, month);
   const income = actual ? actual.income : plannedIncome;
   const spending = actual ? actual.spending : plannedSpending;
 

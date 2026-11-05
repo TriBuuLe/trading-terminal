@@ -9,6 +9,7 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 20_000 },
   fullyParallel: false,
+  workers: 1, // specs share one database (the planner profile is global)
   retries: 0,
   reporter: [["list"]],
   globalSetup: "./tests/e2e/global-setup.ts",

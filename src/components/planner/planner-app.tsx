@@ -11,13 +11,14 @@ import type { Profile } from "@/lib/planner/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingRows } from "../terminal/bits";
+import { Analysis } from "./analysis";
 import { AssumptionsAndData } from "./assumptions";
 import { PlanOverview } from "./overview";
 import { AccountSection, BasicsSection, DebtSection, emptyProfile, ExpenseSection, GoalSection, IncomeSection, RiskSection, SettingsSection, TaxFactsSection, WIZARD_STEPS } from "./profile-editor";
 import { MockAccounts } from "./accounts";
 import { Transactions } from "./transactions";
 
-type Tab = "overview" | "finances" | "accounts" | "transactions" | "assumptions";
+type Tab = "overview" | "analysis" | "finances" | "accounts" | "transactions" | "assumptions";
 
 function useSaveProfile() {
   const qc = useQueryClient();
@@ -131,6 +132,7 @@ function MyFinances({ initial }: { initial: Profile }) {
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "My plan" },
+  { id: "analysis", label: "Analysis" },
   { id: "finances", label: "My finances" },
   { id: "accounts", label: "Accounts (Roth, TFSA…)" },
   { id: "transactions", label: "Transactions" },
@@ -163,6 +165,7 @@ export function PlannerApp() {
       <div className="scrollbar-thin min-h-0 flex-1 overflow-auto p-3">
         <div className="mx-auto max-w-6xl">
           {tab === "overview" && <PlanOverview country={profile.country} />}
+          {tab === "analysis" && <Analysis />}
           {tab === "finances" && <MyFinances key={JSON.stringify(profile)} initial={profile} />}
           {tab === "accounts" && <MockAccounts profile={profile} onEditTaxFacts={() => setTab("finances")} />}
           {tab === "transactions" && <Transactions />}

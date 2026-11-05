@@ -144,7 +144,12 @@ export interface Progress {
  * to investing isn't counted twice. A month "met" the plan when cash saved +
  * invested ≥ its save + invest targets.
  */
-export function progress(plan: YearPlan, p: Profile, actuals: MonthActual[], today: string): Progress {
+/**
+ * `incomeAhead`: money still expected after your last statement (from the income
+ * section). When given, the projection is what you'd really keep:
+ * kept so far + income still expected − your budget for the months ahead.
+ */
+export function progress(plan: YearPlan, p: Profile, actuals: MonthActual[], today: string, opts: { incomeAhead?: number } = {}): Progress {
   const current = today.slice(0, 7);
   const planned = plannedMonths(plan, p);
   const byMonth = new Map(actuals.map((a) => [a.month, a]));
@@ -152,9 +157,8 @@ export function progress(plan: YearPlan, p: Profile, actuals: MonthActual[], tod
     const a = byMonth.get(pl.month);
     const complete = a?.status === "full" && a.income !== null && a.spent !== null;
     const actual = complete ? { income: a!.income!, spending: a!.spent!, invested: round2(a!.invested ?? 0), saved: round2(a!.income! - a!.spent! - (a!.invested ?? 0)) } : null;
-    const target = pl.save + pl.invest;
     const status: MonthStatus = actual
-      ? actual.saved + actual.invested >= target - 1
+      ? actual.spending <= pl.spending + 1
         ? "met"
         : "missed"
       : pl.month < current
@@ -175,7 +179,9 @@ export function progress(plan: YearPlan, p: Profile, actuals: MonthActual[], tod
   const n = Math.max(1, rest.length);
   const remSave = round2(goals.save - saved);
   const remInvest = round2(goals.invest - invested);
-  const projected = round2(saved + invested + sum(rest.map((m) => m.planned.save + m.planned.invest)));
+  // Projection = what you'd keep: so far + income still expected − your budget ahead (or, without income data, the plan's income − budget)
+  const incomeAhead = opts.incomeAhead ?? sum(rest.map((m) => m.planned.income));
+  const projected = round2(saved + invested + incomeAhead - sum(rest.map((m) => m.planned.spending)));
   const shortfall = round2(Math.max(0, goals.total - projected));
   return {
     year: plan.year,

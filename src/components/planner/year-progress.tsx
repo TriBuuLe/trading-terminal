@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 import type { LongTermGoal, Progress, YearPlan } from "@/lib/planner/yearplan";
@@ -21,6 +21,7 @@ interface YearResponse {
   progress: Progress | null;
   longTerm: LongTermGoal[];
   netWorth: number;
+  income: { ahead: number; coveredThrough: string | null } | null;
 }
 
 function Card({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
@@ -57,33 +58,34 @@ export function YearProgress() {
   const p = r.progress;
   const doneSpan = span(p.toDate.months);
   const so = p.toDate.saved + p.toDate.invested;
-  const plannedSo = p.toDate.plannedSave + p.toDate.plannedInvest;
   const rem = p.remaining;
+  const spendAhead = p.months.filter((m) => rem.months.includes(m.month)).reduce((t, m) => t + m.planned.spending, 0);
   return (
     <>
       <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
-        <Tile label={`${r.year} goal: save + invest`} value={w(p.goals.total)} sub={`save ${w(p.goals.save)} · invest ${w(p.goals.invest)}`} />
+        <Tile label={`${r.year} goal: save + invest`} value={w(p.goals.total)} sub={`save ${w(p.goals.save)} · invest ${w(p.goals.invest)} (My finances)`} />
         <Tile
-          label={doneSpan ? `So far (${doneSpan})` : "So far"}
+          label={doneSpan ? `Kept so far (${doneSpan})` : "Kept so far"}
           value={w(so)}
-          tone={p.toDate.months.length ? (so >= plannedSo ? "up" : "down") : undefined}
-          sub={p.toDate.months.length ? `plan ${w(plannedSo)} · saved ${w(p.toDate.saved)} · invested ${w(p.toDate.invested)}` : "no complete statement yet"}
+          tone={p.toDate.months.length ? (so >= 0 ? "up" : "down") : undefined}
+          sub={p.toDate.months.length ? `money in − spending · cash ${w(p.toDate.saved)} + invested ${w(p.toDate.invested)}` : "no complete statement yet"}
         />
         <Tile
           label="Projected Dec 31"
           value={w(rem.projected)}
           tone={rem.shortfall > 0 ? "down" : "up"}
-          sub={rem.shortfall > 0 ? `short ${w(rem.shortfall)}` : `on track (+${w(rem.projected - p.goals.total)})`}
-        />
-        <Tile
-          label={rem.months.length ? `Needed / month (${span(rem.months)})` : "Needed / month"}
-          value={w(rem.perMonth.total)}
           sub={
             <>
-              save {w(rem.perMonth.save)} · invest {w(rem.perMonth.invest)}
-              {rem.cutSpendingPerMonth > 0 && <span className="text-down"> · cut spending {w(rem.cutSpendingPerMonth)}/mo</span>}
+              {w(so)} + {w(r.income?.ahead ?? 0)} still expected − {w(spendAhead)} budget {span(rem.months)}
+              {rem.shortfall > 0 ? <span className="text-down"> · {w(rem.shortfall)} short of goal</span> : <span className="text-up"> · goal reached</span>}
             </>
           }
+        />
+        <Tile
+          label={rem.months.length ? `To reach the goal (${span(rem.months)})` : "To reach the goal"}
+          value={rem.shortfall > 0 ? `−${w(rem.cutSpendingPerMonth)}/mo` : "on track"}
+          tone={rem.shortfall > 0 ? "down" : "up"}
+          sub={rem.shortfall > 0 ? `spend this much less than your budget each month, or lower the goal` : `keep spending within your budget`}
         />
       </div>
       <YearChart p={p} />
@@ -92,52 +94,46 @@ export function YearProgress() {
   );
 }
 
-/** Jan–Dec: saved + invested each month (statements solid, plan light), cumulative actual and projected, and the December goal. */
+/** Money kept since Jan 1 (money in − spending, incl. invested): statements solid, projection dashed, goal flat. */
 function YearChart({ p }: { p: Progress }) {
   const last = p.toDate.months.at(-1);
-  const data: { label: string; actual: number | null; plan: number | null; cumActual: number | null; cumProjected: number | null; status: string }[] = [];
+  const rest = p.remaining.months;
+  const step = rest.length ? (p.remaining.projected - (p.toDate.saved + p.toDate.invested)) / rest.length : 0;
+  const data: { label: string; kept: number | null; projected: number | null; note: string }[] = [];
   for (let k = 0, cum = 0, proj = 0; k < p.months.length; k++) {
     const m = p.months[k]!;
-    const actual = m.actual ? m.actual.saved + m.actual.invested : null;
-    const plan = m.planned.save + m.planned.invest;
-    if (actual !== null) cum += actual;
-    // Projection: from the total so far, add the plan for each month still ahead.
-    const ahead = !m.actual && m.status !== "no statement" && (!last || m.month > last);
+    if (m.actual) cum += m.actual.saved + m.actual.invested;
     if (m.month === last) proj = cum;
-    if (ahead) proj += plan;
+    if (rest.includes(m.month)) proj += step;
     data.push({
       label: mName(m.month),
-      actual,
-      plan: m.actual ? null : plan,
-      cumActual: m.actual ? Math.round(cum) : null,
-      cumProjected: ahead || m.month === last ? Math.round(proj) : null,
-      status: m.status,
+      kept: !last || m.month <= last ? Math.round(cum) : null,
+      projected: m.month === last || rest.includes(m.month) ? Math.round(proj) : null,
+      note: m.actual ? `kept ${w(m.actual.saved + m.actual.invested)} this month` : m.status === "no statement" ? "no statement (not counted)" : rest.includes(m.month) ? "projected" : "",
     });
   }
   return (
-    <Card title={`Saved + invested, Jan–Dec ${p.year}`}>
-      <div className="h-52">
+    <Card title={`Money kept since Jan 1, ${p.year}`}>
+      <div className="h-48">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
+          <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
             <CartesianGrid stroke={C.grid} vertical={false} />
             <XAxis dataKey="label" tick={{ fill: C.tick, fontSize: 10 }} tickLine={false} axisLine={{ stroke: C.axis }} />
             <YAxis tick={{ fill: C.tick, fontSize: 10 }} tickLine={false} axisLine={false} width={56} tickFormatter={(v: number) => money(v, { compact: true, whole: true })} />
             <Tooltip
-              cursor={{ fill: "rgba(255,255,255,0.04)" }}
               contentStyle={{ background: "#1c1d21", border: "1px solid #2a2c31", borderRadius: 6, fontSize: 11 }}
               formatter={(v, name) => [v === null || v === undefined ? "—" : money(Number(v)), String(name)]}
-              labelFormatter={(label, payload) => `${String(label)} · ${(payload?.[0]?.payload as (typeof data)[number] | undefined)?.status ?? ""}`}
+              labelFormatter={(label, payload) => `${String(label)}${(payload?.[0]?.payload as (typeof data)[number] | undefined)?.note ? ` · ${(payload![0]!.payload as (typeof data)[number]).note}` : ""}`}
             />
             <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
-            <Bar dataKey="actual" name="Statements" fill={C.actual} radius={[3, 3, 0, 0]} isAnimationActive={false} />
-            <Bar dataKey="plan" name="Plan" fill={C.planned} fillOpacity={0.35} radius={[3, 3, 0, 0]} isAnimationActive={false} />
-            <Line dataKey="cumActual" name="Total so far" stroke={C.actual} strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Line dataKey="cumProjected" name="Projected" stroke={C.planned} strokeDasharray="4 3" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-            <ReferenceLine y={p.goals.total} stroke={C.goal} strokeDasharray="2 3" label={{ value: `goal ${w(p.goals.total)}`, fill: C.goal, fontSize: 10, position: "insideTopRight" }} />
+            <ReferenceLine y={0} stroke={C.axis} />
+            <ReferenceLine y={p.goals.total} stroke={C.goal} strokeDasharray="2 3" label={{ value: `goal ${w(p.goals.total)}`, fill: C.goal, fontSize: 10, position: "insideTopLeft" }} />
+            <Line dataKey="kept" name="Kept (statements)" stroke={C.actual} strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
+            <Line dataKey="projected" name="Projected (income still expected − budget)" stroke={C.planned} strokeDasharray="4 3" strokeWidth={2} dot={false} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      {p.missing.length > 0 && <p className="mt-1 text-[10px] text-amber-300">No complete statement: {p.missing.map(mName).join(", ")} (unknown, not counted as zero).</p>}
+      {p.missing.length > 0 && <p className="mt-1 text-[10px] text-amber-300">No complete statement: {p.missing.map(mName).join(", ")} (not counted).</p>}
     </Card>
   );
 }
@@ -192,7 +188,7 @@ function MonthTable({ p }: { p: Progress }) {
               </Fragment>
             ))}
             <tr className="border-t border-border">
-              <td className="py-1 pr-2 font-sans">Met plan</td>
+              <td className="py-1 pr-2 font-sans" title="Spending stayed within your budget that month">Within budget</td>
               {p.months.map((m) => (
                 <td key={m.month} className="px-1 text-right">
                   <Tag tone={STATUS_TONE[m.status]} className="px-0.5 text-[9px]">

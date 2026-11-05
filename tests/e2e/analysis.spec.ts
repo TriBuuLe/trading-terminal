@@ -107,6 +107,10 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await expect(page.getByText(`${y} goal: save + invest`)).toBeVisible();
     await expect(page.getByText("$1,800").first()).toBeVisible();
     await expect(page.getByText(`Plan vs statements, ${y}`)).toBeVisible();
+    // One chart: money kept since Jan 1; the projection shows its parts
+    await expect(page.getByText(`Money kept since Jan 1, ${y}`)).toBeVisible();
+    await expect(page.getByText(/still expected − \$[\d,]+ budget/)).toBeVisible();
+    await expect(page.getByText("Within budget")).toBeVisible();
     await page.screenshot({ path: "test-results/plan.png", fullPage: true });
   } finally {
     await request.delete("/api/finances/export");

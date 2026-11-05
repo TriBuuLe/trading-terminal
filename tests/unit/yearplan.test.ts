@@ -52,14 +52,15 @@ describe("yearly budget", () => {
 });
 
 describe("plan vs statements", () => {
-  // Income 3,000/month; budget Jan–Apr 1,050, May on 1,280; save 500 + invest 200 every month → December goals 6,000 + 2,400 = 8,400
+  // Income 3,000/month; budget Jan–Apr 1,050 (rent 650 + dining 400), May on 1,280; save 500 + invest 200 a month → goals 6,000 + 2,400 = 8,400
   const plan: YearPlan = { ...newYearPlan(profile, 2026, "2026-01-02"), save: Array.from({ length: 12 }, () => 500), invest: Array.from({ length: 12 }, () => 200) };
   const full = (month: string, income: number, spent: number, invested: number): MonthActual => ({ month, income, spent, invested, status: "full" });
   const actuals: MonthActual[] = [
-    full("2026-01", 3000, 1500, 200), // saved 1,300 + 200 → met
+    full("2026-01", 3000, 1000, 200), // spent 1,000 ≤ 1,050 → met
     { month: "2026-02", income: 100, spent: 20, invested: 0, status: "thin" }, // incomplete statement: unknown
-    full("2026-03", 3000, 2600, 0), // saved 400 + 0 < 700 → missed
-    ...["04", "05", "06", "07", "08", "09", "10"].map((m) => full(`2026-${m}`, 3000, 2100, 200)), // 700 + 200 = 900 → met
+    full("2026-03", 3000, 2600, 0), // 2,600 > 1,050 → missed
+    full("2026-04", 3000, 1200, 200), // 1,200 > 1,050 → missed
+    ...["05", "06", "07", "08", "09", "10"].map((m) => full(`2026-${m}`, 3000, 1200, 200)), // 1,200 ≤ 1,280 → met
     { month: "2026-11", income: 0, spent: 50, invested: 0, status: "current" },
   ];
   const r = progress(plan, profile, actuals, "2026-11-05");
@@ -68,29 +69,30 @@ describe("plan vs statements", () => {
     expect(plannedMonths(plan, profile)[4]).toEqual({ month: "2026-05", income: 3000, spending: 1280, save: 500, invest: 200, unassigned: 1020 });
   });
 
-  it("each month: met / missed / no statement / in progress / upcoming (missing ≠ zero)", () => {
-    expect(r.months.map((m) => m.status)).toEqual(["met", "no statement", "missed", "met", "met", "met", "met", "met", "met", "met", "in progress", "upcoming"]);
+  it("a month met the plan when spending stayed within the budget (missing ≠ zero)", () => {
+    expect(r.months.map((m) => m.status)).toEqual(["met", "no statement", "missed", "missed", "met", "met", "met", "met", "met", "met", "in progress", "upcoming"]);
     expect(r.months[1]!.actual).toBeNull();
     expect(r.missing).toEqual(["2026-02"]);
   });
 
   it("cash saved excludes money moved to investing", () => {
-    expect(r.months[0]!.actual).toEqual({ income: 3000, spending: 1500, invested: 200, saved: 1300 });
+    expect(r.months[0]!.actual).toEqual({ income: 3000, spending: 1000, invested: 200, saved: 1800 });
   });
 
-  it("to date, remaining through December, shortfall, spending cut", () => {
-    // Saved: 1,300 + 400 + 7 × 700 = 6,600; invested: 200 + 0 + 7 × 200 = 1,600 (9 complete months)
-    expect(r.toDate).toMatchObject({ saved: 6600, invested: 1600, plannedSave: 4500, plannedInvest: 1800 });
-    // Remaining months: Nov, Dec. Save goal 6,000 already passed → 0 left; invest 2,400 − 1,600 = 800 → 400/month
+  it("to date, remaining, and a projection of what you'd really keep", () => {
+    // Saved: 1,800 + 400 + 7 × 1,600 = 13,400; invested: 200 + 0 + 7 × 200 = 1,600
+    expect(r.toDate).toMatchObject({ saved: 13_400, invested: 1600, plannedSave: 4500, plannedInvest: 1800 });
+    // Nov + Dec: save goal already passed; invest 2,400 − 1,600 = 800 → 400/month
     expect(r.remaining).toMatchObject({ months: ["2026-11", "2026-12"], save: 0, invest: 800, perMonth: { save: 0, invest: 400, total: 400 } });
-    // Projected: 8,200 so far + 2 × 700 planned = 9,600 ≥ 8,400 → no shortfall
-    expect(r.remaining).toMatchObject({ projected: 9600, shortfall: 0, cutSpendingPerMonth: 0 });
+    // Projected = 15,000 kept so far + 2 × 3,000 income − 2 × 1,280 budget = 18,440 ≥ 8,400
+    expect(r.remaining).toMatchObject({ projected: 18_440, shortfall: 0, cutSpendingPerMonth: 0 });
   });
 
-  it("a shortfall turns into a monthly spending cut", () => {
-    const behind = progress(plan, profile, [full("2026-01", 3000, 3000, 0), ...["02", "03", "04", "05", "06", "07", "08", "09", "10"].map((m) => full(`2026-${m}`, 3000, 3000, 0))], "2026-11-05");
-    // Nothing saved in 10 months; projected = 2 × 700 = 1,400; shortfall 8,400 − 1,400 = 7,000 → 3,500/month less spending in Nov and Dec
-    expect(behind.remaining).toMatchObject({ projected: 1400, shortfall: 7000, cutSpendingPerMonth: 3500 });
+  it("with income still expected from your statements, and a shortfall → spending cut", () => {
+    const flat = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"].map((m) => full(`2026-${m}`, 3000, 3000, 0));
+    const b = progress(plan, profile, flat, "2026-11-05", { incomeAhead: 5000 });
+    // Nothing kept so far; projected = 0 + 5,000 − 2,560 = 2,440; shortfall 8,400 − 2,440 = 5,960 → 2,980/month less spending in Nov and Dec
+    expect(b.remaining).toMatchObject({ projected: 2440, shortfall: 5960, cutSpendingPerMonth: 2980 });
   });
 });
 

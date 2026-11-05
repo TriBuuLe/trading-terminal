@@ -392,12 +392,13 @@ export async function getYearProgress(year: number) {
   const netWorth =
     profile.accounts.reduce((t, a) => t + a.balance, 0) - profile.debts.reduce((t, d) => t + d.balance, 0) + (hasInvestAccount ? 0 : s.investments.allTime.net);
   const actuals: MonthActual[] = s.months.map((m) => ({ month: m.month, income: m.income, spent: m.spent, invested: m.invested, status: m.status }));
+  const incomeNow = yearIncome(profile, txs, year, (m) => s.months.find((x) => x.month === m)?.status ?? "none");
   return {
     year,
     plan,
     planned: plan ? plannedMonths(plan, profile) : null,
-    progress: plan ? progress(plan, profile, actuals, today) : null,
-    income: yearIncome(profile, txs, year, (m) => s.months.find((x) => x.month === m)?.status ?? "none"),
+    progress: plan ? progress(plan, profile, actuals, today, { incomeAhead: incomeNow.ahead }) : null,
+    income: incomeNow,
     // Actual spending per category and month (complete statement months only), for "so far" in the budget
     actualSpend: Object.fromEntries(
       s.categories.map((c) => [

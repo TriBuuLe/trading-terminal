@@ -29,16 +29,6 @@ function Card({ title, children, className, right }: { title: string; children: 
   );
 }
 
-function Tile({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
-  return (
-    <div className="rounded-md border border-border bg-background/40 px-3 py-2">
-      <div className="text-[10px] tracking-wider text-muted-foreground uppercase">{label}</div>
-      <div className="num mt-0.5 text-lg leading-tight">{value}</div>
-      {sub && <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>}
-    </div>
-  );
-}
-
 /** Stacked bar with 2px gaps + legend; the 50/30/20 guideline drawn underneath for comparison. */
 function CashFlowBar({ plan }: { plan: Plan }) {
   const cf = plan.cashFlow;
@@ -86,89 +76,6 @@ function CashFlowBar({ plan }: { plan: Plan }) {
 }
 
 const STEP_ICON = { done: CheckCircle2, active: CircleDot, waiting: Circle } as const;
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-interface RollEntry {
-  month: string;
-  source: "actual" | "estimated";
-  income: number;
-  spending: number;
-  debtPayments: number;
-  debtInterest: number;
-  cashAfter: number;
-  debtAfter: number;
-  netWorth: number;
-}
-
-/** Net worth month by month from the automatic monthly updates, plus today. */
-function NetWorthHistory({ current }: { current: number }) {
-  const q = useQuery({ queryKey: ["networth-history"], queryFn: () => api<RollEntry[]>("/api/finances/networth") });
-  const hist = q.data ?? [];
-  const data = [...hist.map((e) => ({ label: e.month, value: e.netWorth })), { label: "now", value: current }];
-  const last = hist.at(-1);
-  return (
-    <Card title="Net worth over time">
-      {hist.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground">
-          Today: <span className="num">{money(current)}</span>. Turn on “Update balances automatically each month” under My finances → Accounts & savings, and a point is added
-          here after every month ends (income in, spending and debt payments out).
-        </p>
-      ) : (
-        <>
-          <div className="h-40">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
-                <CartesianGrid stroke="#1f2125" vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: "#8b8d93", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "#2a2c31" }} />
-                <YAxis tick={{ fill: "#8b8d93", fontSize: 10 }} tickLine={false} axisLine={false} width={64} tickFormatter={(v: number) => money(v, { compact: true, whole: true })} />
-                <Tooltip contentStyle={{ background: "#1c1d21", border: "1px solid #2a2c31", borderRadius: 6, fontSize: 11 }} formatter={(v) => [money(Number(v)), "net worth"]} />
-                <Line dataKey="value" stroke="#3987e5" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-          {last && (
-            <p className="num mt-1 text-[11px] text-muted-foreground">
-              {last.month} ({last.source === "actual" ? "from your transactions" : "estimated from the plan"}): +{money(last.income)} income · −{money(last.spending)} spending · −
-              {money(last.debtPayments)} debt payments ({money(last.debtInterest)} of it interest) → net worth {money(last.netWorth)}
-            </p>
-          )}
-        </>
-      )}
-    </Card>
-  );
-}
-
-/** The 12 months the income average is made of: one bar per month, the average as a dashed line. */
-function IncomeTimeline({ plan }: { plan: Plan }) {
-  const months = plan.incomeByMonth;
-  const max = Math.max(1, ...months.map((m) => m.amount), plan.monthlyIncome);
-  const zero = months.filter((m) => m.amount === 0).length;
-  return (
-    <Card title="Income, month by month (Jan–Dec)">
-      <div className="relative flex h-24 items-end gap-[2px]">
-        <div className="pointer-events-none absolute inset-x-0 border-t border-dashed border-muted-foreground/60" style={{ bottom: `${(plan.monthlyIncome / max) * 100}%` }} title="12-month average" />
-        {months.map((m) => (
-          <div key={m.month} className="group relative flex h-full flex-1 flex-col justify-end" title={`${m.month}: ${money(m.amount)}`}>
-            <div className="w-full rounded-t-[3px]" style={{ height: `${(m.amount / max) * 100}%`, minHeight: m.amount > 0 ? 2 : 0, background: "#199e70" }} />
-          </div>
-        ))}
-      </div>
-      <div className="mt-1 flex gap-[2px] text-center text-[9px] text-muted-foreground">
-        {months.map((m) => (
-          <span key={m.month} className="flex-1">
-            {MONTHS[Number(m.month.slice(5, 7)) - 1]}
-            {m.month.endsWith("-01") && <span className="block">{m.month.slice(0, 4)}</span>}
-          </span>
-        ))}
-      </div>
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        Dashed line = the average the plan uses ({money(plan.monthlyIncome)}/mo). {zero > 0 && `${zero} months this year have no income entered. `}
-        {zero > 0 && "If you'll be working then (another co-op term, a summer job, full-time after graduation), add it under My finances, or tick “repeats every year” on recurring terms."}
-      </p>
-    </Card>
-  );
-}
 
 function ProbabilityBar({ p }: { p: number | null }) {
   if (p === null) return <span className="text-muted-foreground">—</span>;
@@ -298,18 +205,6 @@ export function PlanOverview({ country }: { country: Country }) {
 
       <YearProgress />
       <LongTermGoals />
-
-      <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
-        <Tile label="Avg monthly income" value={money(plan.monthlyIncome)} sub={`take-home, Jan–Dec average`} />
-        <Tile label="Left to save / month" value={<span className={plan.cashFlow.available < 0 ? "text-down" : ""}>{money(plan.cashFlow.available)}</span>} sub={`${plan.cashFlow.savingsRatePct}% savings rate`} />
-        <Tile label="Goals need / month" value={money(plan.feasibility.needed)} sub={plan.feasibility.shortfall > 0 ? <span className="text-down">short {money(plan.feasibility.shortfall)}/mo</span> : "covered"} />
-        <Tile label="Net worth today" value={money(plan.netWorth.current)} sub={`median in ${plan.netWorth.years}y: ${money(plan.netWorth.sim.p50, { compact: true, whole: true })} (today's $)`} />
-      </div>
-
-      <div className="grid gap-3 @4xl:grid-cols-2">
-        <IncomeTimeline plan={plan} />
-        <NetWorthHistory current={plan.netWorth.current} />
-      </div>
 
       <div className={cn("rounded-md border p-3 text-xs", plan.feasibility.shortfall > 0 ? "border-down/40 bg-down-muted" : "border-up/40 bg-up-muted")}>
         {q.data.basis && (

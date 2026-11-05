@@ -2,12 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useNow } from "@/hooks/use-now";
 import { api } from "@/lib/api";
 import { SPENDING_CATEGORIES, SPENDING_CATEGORY_NAMES, defaultKind } from "@/lib/planner/categories";
 import { matchPlanCategory } from "@/lib/planner/spending";
-import { addMonths, incomeInMonth, isActive, monthlyEquivalent, nextPaycheck, overrideWarning, paychecks, riskScore } from "@/lib/planner/core";
+import { addMonths, incomeInMonth, isActive, monthlyEquivalent, nextPaycheck, overrideWarning, paychecks, riskScore, round2 } from "@/lib/planner/core";
+import { proposeWants } from "@/lib/planner/propose";
 import { lineMatchesPattern, matchIncomeLine, WEEKDAYS, type PayPattern } from "@/lib/planner/paychecks";
 import { derivedTaxFacts, netIncome } from "@/lib/planner/net";
 import { TAX_YEARS } from "@/lib/tax/rules";
@@ -549,188 +550,174 @@ export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
 }
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const cell = "num h-6 w-[4.25rem] rounded border border-transparent bg-transparent px-1 text-right text-[11px] outline-none hover:border-input focus:border-ring focus:bg-background";
+const cell = "num h-6 w-full min-w-0 rounded border border-input bg-background px-1 text-right text-[11px] outline-none focus:border-ring";
 const whole0 = (x: number) => `$${Math.round(x).toLocaleString("en-US")}`;
 
-/** One editable month cell; "→" copies it into every later month (a rent change from May on). */
-function MonthCell({ value, onChange, onFill, label }: { value: number; onChange: (n: number) => void; onFill?: () => void; label: string }) {
+/** The 12 month boxes under an expanded row; "→" copies a month into the rest of the year. */
+function MonthStrip({ label, months, onChange }: { label: string; months: number[]; onChange: (m: number[]) => void }) {
   return (
-    <td className="group relative p-0">
-      <input aria-label={label} type="number" min={0} step={1} className={cell} value={Number.isFinite(value) ? value : 0} onChange={(e) => onChange(Number(e.target.value) || 0)} />
-      {onFill && (
-        <button
-          type="button"
-          tabIndex={-1}
-          title="Copy to the rest of the year"
-          aria-label={`${label}: copy to the rest of the year`}
-          onClick={onFill}
-          className="absolute top-0.5 right-0 hidden rounded px-0.5 text-[9px] text-series-1 group-focus-within:block group-hover:block"
-        >
-          →
-        </button>
-      )}
-    </td>
+    <div className="grid grid-cols-6 gap-1.5 py-1.5 pl-6 @3xl:grid-cols-12">
+      {months.map((v, k) => (
+        <label key={k} className="group relative flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+          <span className="flex justify-between">
+            {MONTH_ABBR[k]}
+            {k < 11 && (
+              <button type="button" tabIndex={-1} title="Copy to the rest of the year" aria-label={`${label} ${MONTH_ABBR[k]}: copy to the rest of the year`} onClick={() => onChange(fillFrom(months, k))} className="text-series-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+                →
+              </button>
+            )}
+          </span>
+          <input aria-label={`${label} ${MONTH_ABBR[k]}`} type="number" min={0} step={1} className={cell} value={Number.isFinite(v) ? v : 0} onChange={(e) => onChange(months.map((x, j) => (j === k ? Number(e.target.value) || 0 : x)))} />
+        </label>
+      ))}
+    </div>
   );
 }
 
 /**
- * The calendar-year budget and savings plan: per category a Jan–Dec allocation
- * (the annual budget is the sum), plus cash to save and money to invest each month.
- * This is the plan; statements are compared against it under My plan and never change it.
+ * The calendar-year budget and savings plan. One line per category (annual budget,
+ * monthly average, statement estimate, and for wants a proposed budget); ▸ opens
+ * its 12 month boxes. Statements are compared against this plan under My plan and never change it.
  */
 export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
   const year = Number(ymOf(useNow(60 * 60_000)).slice(0, 4));
+  const [openRows, setOpenRows] = useState<string[]>([]);
+  const toggle = (k: string) => setOpenRows((o) => (o.includes(k) ? o.filter((x) => x !== k) : [...o, k]));
+  const open = { has: (k: string) => openRows.includes(k) };
   const plan = p.yearPlans?.[String(year)] ?? newYearPlan(p, year, new Date().toISOString().slice(0, 10));
   const setPlan = (fn: (pl: YearPlan) => YearPlan) => set((x) => ({ ...x, yearPlans: { ...(x.yearPlans ?? {}), [String(year)]: fn(x.yearPlans?.[String(year)] ?? plan) } }));
-  const setRow = (k: number, months: number[]) => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r, j) => (j === k ? { ...r, months } : r)) }));
+  const setRow = (cat: string, months: number[]) => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r) => (r.category === cat ? { ...r, months } : r)) }));
   const planned = plannedMonths(plan, p);
-  const income = planned.map((m) => m.income);
-  // Estimates from statements: the average of full months × 12 (an estimate, not actual annual spending).
+  const income = sum(planned.map((m) => m.income));
+  const spending = sum(planned.map((m) => m.spending));
+  const unassigned = sum(planned.map((m) => m.unassigned));
+
+  // Statements: average of full months (an estimate when × 12, not actual annual spending).
   const actual = useQuery({ queryKey: ["summary", year], queryFn: () => api<{ summary: YearSummary | null }>(`/api/finances/summary?year=${year}`) });
   const s = actual.data?.summary;
-  const range = s?.fullMonths.length ? `${MONTH_ABBR[Number(s.fullMonths[0]!.slice(5)) - 1]}–${MONTH_ABBR[Number(s.fullMonths.at(-1)!.slice(5)) - 1]}, ${s.fullMonths.length} full months` : "";
-  const est = (cat: string) => {
-    const a = s?.categories.find((c) => c.category === cat)?.avgPerMonth;
-    return a ? { avg: Math.round(a), year: Math.round(a) * 12 } : null;
-  };
-  const missing = SPENDING_CATEGORIES.filter((c) => !plan.budget.some((r) => r.category === c.name)).sort((a, b) => (est(b.name)?.year ?? 0) - (est(a.name)?.year ?? 0));
-  const spendTotal = planned.map((m) => m.spending);
-  const unassigned = planned.map((m) => m.unassigned);
-  const target = (key: "save" | "invest", label: string) => (
-    <tr className="border-t border-border/50">
-      <td className="py-0.5 pr-2 font-sans text-xs">{label}</td>
-      {plan[key].map((v, k) => (
-        <MonthCell
-          key={k}
-          label={`${label} ${MONTH_ABBR[k]}`}
-          value={v}
-          onChange={(n) => setPlan((pl) => ({ ...pl, [key]: pl[key].map((x, j) => (j === k ? n : x)) }))}
-          onFill={k < 11 ? () => setPlan((pl) => ({ ...pl, [key]: fillFrom(pl[key], k) })) : undefined}
-        />
-      ))}
-      <td className="p-0 pl-1">
-        <input
-          aria-label={`${label} December goal`}
-          type="number"
-          min={0}
-          className={cn(cell, "w-20 font-medium")}
-          value={sum(plan[key])}
-          onChange={(e) => setPlan((pl) => ({ ...pl, [key]: spreadAnnual(Number(e.target.value) || 0) }))}
-        />
-      </td>
-      <td />
-    </tr>
-  );
-  return (
-    <Section title={`${year} budget & savings plan`} hint="Plan once at the start of the year. Year column = annual total (edit it to spread evenly); → copies a month into the rest of the year.">
-      <div className="overflow-x-auto">
-        <table className="num w-full text-[11px]">
-          <thead className="text-[10px] tracking-wider text-muted-foreground uppercase">
-            <tr>
-              <th className="py-1 pr-2 text-left font-medium">{year}</th>
-              {MONTH_ABBR.map((m) => (
-                <th key={m} className="px-1 text-right font-medium">
-                  {m}
-                </th>
-              ))}
-              <th className="pl-1 text-right font-medium">Year</th>
-              <th className="pl-2 text-right font-medium" title="Average of full statement months × 12 (an estimate)">
-                Statements est.
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="text-muted-foreground">
-              <td className="py-0.5 pr-2 font-sans text-xs">Take-home (income lines)</td>
-              {income.map((v, k) => (
-                <td key={k} className="px-1 text-right">
-                  {whole0(v)}
-                </td>
-              ))}
-              <td className="pl-1 text-right">{whole0(sum(income))}</td>
-              <td />
-            </tr>
-            {plan.budget.map((r, k) => {
-              const e = est(r.category);
-              return (
-                <tr key={r.category} className="border-t border-border/50">
-                  <td className="py-0.5 pr-2 font-sans text-xs whitespace-nowrap">
-                    {r.category}
-                    <button
-                      type="button"
-                      className="ml-1 text-[10px] text-muted-foreground hover:text-foreground"
-                      title="Need = must pay; want = could cut"
-                      onClick={() => setPlan((pl) => ({ ...pl, budget: pl.budget.map((x, j) => (j === k ? { ...x, kind: x.kind === "need" ? "want" : "need" } : x)) }))}
-                    >
-                      {r.kind}
-                    </button>
-                    <button type="button" className="ml-1 text-[10px] text-muted-foreground hover:text-down" aria-label={`Remove ${r.category}`} onClick={() => setPlan((pl) => ({ ...pl, budget: pl.budget.filter((_, j) => j !== k) }))}>
-                      ×
-                    </button>
-                  </td>
-                  {r.months.map((v, m) => (
-                    <MonthCell
-                      key={m}
-                      label={`${r.category} ${MONTH_ABBR[m]}`}
-                      value={v}
-                      onChange={(n) => setRow(k, r.months.map((x, j) => (j === m ? n : x)))}
-                      onFill={m < 11 ? () => setRow(k, fillFrom(r.months, m)) : undefined}
-                    />
-                  ))}
-                  <td className="p-0 pl-1">
-                    <input aria-label={`${r.category} annual budget`} type="number" min={0} className={cn(cell, "w-20 font-medium")} value={sum(r.months)} onChange={(e) => setRow(k, spreadAnnual(Number(e.target.value) || 0))} />
-                  </td>
-                  <td className="pl-2 text-right whitespace-nowrap text-muted-foreground">
-                    {e ? (
-                      <button type="button" className="hover:text-foreground" title={`Average ${whole0(e.avg)}/month over ${range} × 12. Click to use it for every month.`} onClick={() => setRow(k, Array.from({ length: 12 }, () => e.avg))}>
-                        {whole0(e.avg)} × 12 = {whole0(e.year)}
-                      </button>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            <tr className="border-t border-border font-medium">
-              <td className="py-0.5 pr-2 font-sans text-xs">Spending</td>
-              {spendTotal.map((v, k) => (
-                <td key={k} className="px-1 text-right">
-                  {whole0(v)}
-                </td>
-              ))}
-              <td className="pl-1 text-right">{whole0(sum(spendTotal))}</td>
-              <td />
-            </tr>
-            {target("save", "Save (cash)")}
-            {target("invest", "Invest")}
-            <tr className="border-t border-border">
-              <td className="py-0.5 pr-2 font-sans text-xs text-muted-foreground">Unassigned</td>
-              {unassigned.map((v, k) => (
-                <td key={k} className={cn("px-1 text-right", v < 0 ? "text-down" : "text-muted-foreground")}>
-                  {whole0(v)}
-                </td>
-              ))}
-              <td className={cn("pl-1 text-right", sum(unassigned) < 0 ? "text-down" : "text-muted-foreground")}>{whole0(sum(unassigned))}</td>
-              <td />
-            </tr>
-          </tbody>
-        </table>
+  const range = s?.fullMonths.length ? `${MONTH_ABBR[Number(s.fullMonths[0]!.slice(5)) - 1]}–${MONTH_ABBR[Number(s.fullMonths.at(-1)!.slice(5)) - 1]} (${s.fullMonths.length} full months)` : "";
+  const avgOf = (cat: string) => s?.categories.find((c) => c.category === cat)?.avgPerMonth ?? null;
+  // Long-term goals' pace needed, for the savings target behind the wants proposal.
+  const yq = useQuery({ queryKey: ["year"], queryFn: () => api<{ longTerm: { neededPerMonth: number }[] } | null>("/api/finances/year") });
+  const goalsNeedYear = round2((yq.data?.longTerm ?? []).reduce((t, g) => t + g.neededPerMonth, 0) * 12);
+  const debtYear = p.debts.reduce((t, d) => t + Math.min(d.minPayment, d.balance), 0) * 12;
+  const prop = proposeWants({ budget: plan.budget, income, debtMinimumsYear: debtYear, goalsNeedYear, statementAvg: avgOf });
+  const proposedOf = (cat: string) => prop.rows.find((r) => r.category === cat)?.proposed ?? null;
+  const applyProposal = () => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r) => (r.kind === "want" && proposedOf(r.category) !== null ? { ...r, months: spreadAnnual(proposedOf(r.category)!) } : r)) }));
+
+  const missing = SPENDING_CATEGORIES.filter((c) => !plan.budget.some((r) => r.category === c.name)).sort((a, b) => (avgOf(b.name) ?? 0) - (avgOf(a.name) ?? 0));
+  const rows = [...plan.budget].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "need" ? -1 : 1));
+
+  const line = (key: string, label: React.ReactNode, months: number[], onChange: ((m: number[]) => void) | null, extra: { est?: React.ReactNode; proposed?: React.ReactNode; tone?: string } = {}) => (
+    <div key={key} className="border-t border-border/50">
+      <div className="grid grid-cols-[minmax(10rem,1fr)_7rem_5.5rem_9rem_8rem] items-center gap-2 py-1 text-xs">
+        <div className="flex items-center gap-1">
+          <button type="button" aria-expanded={open.has(key)} aria-label={`Months for ${key}`} onClick={() => toggle(key)} className="w-4 text-muted-foreground hover:text-foreground">
+            {open.has(key) ? "▾" : "▸"}
+          </button>
+          {label}
+        </div>
+        {onChange ? (
+          <input aria-label={`${key} annual`} type="number" min={0} className={cn(cell, "font-medium")} value={sum(months)} onChange={(e) => onChange(spreadAnnual(Number(e.target.value) || 0))} />
+        ) : (
+          <span className={cn("num text-right font-medium", extra.tone)}>{whole0(sum(months))}</span>
+        )}
+        <span className="num text-right text-muted-foreground">{whole0(sum(months) / 12)}/mo</span>
+        <span className="num text-right text-[11px] text-muted-foreground">{extra.est ?? ""}</span>
+        <span className="num text-right text-[11px]">{extra.proposed ?? ""}</span>
       </div>
+      {open.has(key) &&
+        (onChange ? (
+          <MonthStrip label={key} months={months} onChange={onChange} />
+        ) : (
+          <div className="num grid grid-cols-6 gap-1.5 py-1 pl-6 text-[10px] text-muted-foreground @3xl:grid-cols-12">
+            {months.map((v, k) => (
+              <span key={k} className="text-right">
+                {MONTH_ABBR[k]} {whole0(v)}
+              </span>
+            ))}
+          </div>
+        ))}
+    </div>
+  );
+
+  return (
+    <Section title={`${year} budget & savings plan`} hint="Annual budget per category; ▸ for each month. Edit the annual amount to spread it evenly; → copies a month into the rest of the year.">
+      <div className="grid grid-cols-[minmax(10rem,1fr)_7rem_5.5rem_9rem_8rem] gap-2 pb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
+        <span className="pl-5">{year}</span>
+        <span className="text-right">Annual</span>
+        <span className="text-right">Avg</span>
+        <span className="text-right" title={`Average over ${range} × 12: an estimate`}>
+          Statements est.
+        </span>
+        <span className="text-right">Proposed</span>
+      </div>
+      {line("Take-home", <span className="text-muted-foreground">Take-home (income lines)</span>, planned.map((m) => m.income), null)}
+      {rows.map((r) =>
+        line(
+          r.category,
+          <span className="flex items-center gap-1.5">
+            {r.category}
+            <button
+              type="button"
+              title="Need = must pay (you set it); want = nice to have (the app proposes a budget)"
+              onClick={() => setPlan((pl) => ({ ...pl, budget: pl.budget.map((x) => (x.category === r.category ? { ...x, kind: x.kind === "need" ? "want" : "need" } : x)) }))}
+              className={cn("rounded px-1 text-[10px]", r.kind === "need" ? "bg-muted text-muted-foreground" : "bg-series-1/15 text-series-1")}
+            >
+              {r.kind}
+            </button>
+            <button type="button" className="text-[10px] text-muted-foreground hover:text-down" aria-label={`Remove ${r.category}`} onClick={() => setPlan((pl) => ({ ...pl, budget: pl.budget.filter((x) => x.category !== r.category) }))}>
+              ×
+            </button>
+          </span>,
+          r.months,
+          (m) => setRow(r.category, m),
+          {
+            est: avgOf(r.category) !== null ? `${whole0(avgOf(r.category)!)} × 12 = ${whole0(avgOf(r.category)! * 12)}` : "—",
+            proposed:
+              r.kind === "want" && proposedOf(r.category) !== null ? (
+                <button type="button" className="text-series-1 hover:underline" title="Use the proposed annual budget for this category" onClick={() => setRow(r.category, spreadAnnual(proposedOf(r.category)!))}>
+                  {whole0(proposedOf(r.category)!)}
+                </button>
+              ) : null,
+          },
+        ),
+      )}
+      {line("Spending", <span className="font-medium">Spending</span>, planned.map((m) => m.spending), null)}
+      {line("Save (cash)", <span>Save (cash)</span>, plan.save, (m) => setPlan((pl) => ({ ...pl, save: m })))}
+      {line("Invest", <span>Invest</span>, plan.invest, (m) => setPlan((pl) => ({ ...pl, invest: m })))}
+      {line("Unassigned", <span className="text-muted-foreground">Unassigned</span>, planned.map((m) => m.unassigned), null, { tone: unassigned < 0 ? "text-down" : "text-muted-foreground" })}
+
+      {prop.rows.length > 0 && (
+        <div className="num mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-background/60 px-2 py-1.5 text-[11px] text-muted-foreground">
+          <span>
+            Wants proposal: {whole0(prop.income)} take-home − {whole0(prop.needs)} needs{prop.debt > 0 && <> − {whole0(prop.debt)} debt</>} − {whole0(prop.savingsTarget)} savings target ({prop.savingsTargetSource}) ={" "}
+            {whole0(prop.available)}; wants {whole0(prop.total)}/yr (limited by {prop.limitedBy}; now {whole0(prop.baseline)}).
+          </span>
+          {prop.freed > 0 && <span className="text-up">+{whole0(prop.freed)}/yr to save or invest</span>}
+          <button type="button" className="rounded border border-border px-2 py-0.5 text-foreground hover:bg-accent" onClick={applyProposal}>
+            Use proposed wants
+          </button>
+        </div>
+      )}
+      <p className="num mt-1 text-[11px] text-muted-foreground">
+        {whole0(income)} take-home − {whole0(spending)} spending − {whole0(sum(plan.save))} save − {whole0(sum(plan.invest))} invest ={" "}
+        <span className={unassigned < 0 ? "text-down" : "text-foreground"}>{whole0(unassigned)} unassigned</span>
+      </p>
       {missing.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {missing.map((c) => {
-            const e = est(c.name);
+            const a = avgOf(c.name);
             return (
               <button
                 key={c.name}
                 type="button"
-                onClick={() => setPlan((pl) => addBudgetRow(pl, c.name, e?.avg ?? 0))}
-                title={e ? `Adds ${whole0(e.avg)} every month: your average over ${range} × 12 = ${whole0(e.year)} (an estimate)` : undefined}
-                className={cn("rounded border border-dashed px-1.5 py-0.5 text-[10px] hover:text-foreground", e ? "border-amber-500/50 text-amber-300" : "border-border text-muted-foreground")}
+                onClick={() => setPlan((pl) => addBudgetRow(pl, c.name, a ? Math.round(a) : 0))}
+                title={a ? `Adds ${whole0(a)} every month: your average over ${range} (× 12 = ${whole0(a * 12)}, an estimate)` : undefined}
+                className={cn("rounded border border-dashed px-1.5 py-0.5 text-[10px] hover:text-foreground", a ? "border-amber-500/50 text-amber-300" : "border-border text-muted-foreground")}
               >
                 + {c.name}
-                {e && ` · est. ${whole0(e.year)}/yr`}
+                {a && ` · est. ${whole0(a * 12)}/yr`}
               </button>
             );
           })}

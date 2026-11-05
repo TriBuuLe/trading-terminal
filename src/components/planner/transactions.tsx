@@ -48,6 +48,9 @@ export function Transactions() {
       qc.invalidateQueries({ queryKey: ["checkin"] }),
       qc.invalidateQueries({ queryKey: ["networth-history"] }),
       qc.invalidateQueries({ queryKey: ["plan"] }),
+      qc.invalidateQueries({ queryKey: ["year"] }),
+      qc.invalidateQueries({ queryKey: ["profile"] }),
+      qc.invalidateQueries({ queryKey: ["paychecks"] }),
       qc.invalidateQueries({ queryKey: ["summary"] }),
     ]);
   const shown = preview ? (cardMode ? flipPreview(preview.rows) : preview.rows) : [];

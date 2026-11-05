@@ -81,12 +81,19 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     // Budget lines show your actual average; a category you spend on without a line is offered with it.
     // The year budget: Jan–Dec per category (rent $900 Jan–Apr, $1,200 from May = 3,600 + 9,600 = $13,200 a year).
     await expect(page.getByText(`${y} budget & savings plan`)).toBeVisible();
-    await expect(page.getByLabel("Rent annual budget", { exact: true })).toHaveValue("13200");
+    await expect(page.getByLabel("Rent annual", { exact: true })).toHaveValue("13200");
+    // ▸ opens a category's 12 months: rent $900 in Apr, $1,200 in May
+    await page.getByRole("button", { name: "Months for Rent" }).click();
+    await expect(page.getByLabel("Rent Apr", { exact: true })).toHaveValue("900");
+    await expect(page.getByLabel("Rent May", { exact: true })).toHaveValue("1200");
+    // Wants get a proposed budget with its formula
+    await expect(page.getByText(/Wants proposal: .* take-home − .* needs − .* savings target \(20% of take-home\)/)).toBeVisible();
     // A category you spend on without a budget row is offered with its estimate (average × 12, labeled as such).
     await expect(page.getByRole("button", { name: /\+ Transportation · est\. \$[\d,]+\/yr/ })).toBeVisible();
     // December goals: save $1,200 (spread $100/month) and invest $600.
-    await page.getByLabel("Save (cash) December goal").fill("1200");
-    await page.getByLabel("Invest December goal").fill("600");
+    await page.getByLabel("Save (cash) annual", { exact: true }).fill("1200");
+    await page.getByLabel("Invest annual", { exact: true }).fill("600");
+    await page.getByRole("button", { name: "Months for Save (cash)" }).click();
     await expect(page.getByLabel("Save (cash) Jan", { exact: true })).toHaveValue("100");
     await page.screenshot({ path: "test-results/finances.png", fullPage: true });
     await page.getByRole("button", { name: "Save & recalculate" }).click();

@@ -28,6 +28,9 @@ function useSaveProfile() {
       await qc.invalidateQueries({ queryKey: ["profile"] });
       await qc.invalidateQueries({ queryKey: ["plan"] });
       await qc.invalidateQueries({ queryKey: ["checkin"] });
+      await qc.invalidateQueries({ queryKey: ["year"] });
+      await qc.invalidateQueries({ queryKey: ["summary"] });
+      await qc.invalidateQueries({ queryKey: ["paychecks"] });
     },
   });
 }

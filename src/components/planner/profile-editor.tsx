@@ -447,7 +447,7 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
       hint="One line per job or payment. Weekly and biweekly pay counts each payday; paycheck dates come from your payroll deposits."
       onAdd={() => set((x) => ({ ...x, incomes: [...x.incomes, { id: uid(), name: "", amount: 0, frequency: "weekly", kind: "salary", basis: "net", payDay: 5, employmentStart: null, firstPayDate: null }] }))}
     >
-      {p.incomes.length === 0 && <p className="text-[11px] text-muted-foreground">No income yet.</p>}
+      {p.incomes.length === 0 && unmatched.length === 0 && <p className="text-[11px] text-muted-foreground">No income yet.</p>}
       <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] gap-2 pb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
         <span />
         <span>Income</span>
@@ -474,31 +474,31 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
           />
         );
       })}
-      {inc && inc.other.received > 0 && (
-        <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] items-center gap-2 border-t border-border/50 py-1.5 text-xs" title={inc.other.sources.map((x) => `${x.label} ${usd(x.total)}`).join(" · ")}>
-          <span />
-          <span className="text-muted-foreground">Other money in</span>
-          <span className="truncate text-[11px] text-muted-foreground">{inc.other.sources.map((x) => x.label).join(", ")}</span>
-          <span className="num text-right">{usd(inc.other.received)}</span>
-          <span className="num text-right">—</span>
-          <span className="num text-right font-medium">{usd(inc.other.received)}</span>
-          <span />
-        </div>
-      )}
-      {unmatched.length > 0 && (
-        <div className="mt-1 space-y-0.5 border-t border-border/50 pt-1.5 text-[11px] text-muted-foreground">
-          {unmatched.map((x) => (
-            <div key={x.employer} className="num flex flex-wrap items-center gap-2">
-              <span>
-                Deposits from <span className="font-sans text-foreground">{x.employer}</span>: {usd(x.amount)} {x.frequency} · {x.count} since {x.first}
-              </span>
-              <button type="button" className="text-series-1 hover:underline" onClick={() => apply(x, null)}>
+      {unmatched.map((x) => {
+        const got = inc?.unlinked.find((u) => u.employer === x.employer);
+        return (
+          <div key={x.employer} className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] items-center gap-2 border-t border-border/50 py-1.5 text-xs">
+            <span />
+            <span className="truncate font-medium">
+              {x.employer}
+              <span className="ml-1.5 text-[10px] font-normal text-amber-300">not set up</span>
+            </span>
+            <span className="num truncate">
+              {usd(x.amount)} {x.frequency === "weekly" || x.frequency === "biweekly" ? `${x.frequency}, ${DAY_SHORT[x.payDay ?? 5]}` : x.frequency}
+            </span>
+            <span className="num text-right" title={`${got?.deposits ?? x.count} payroll deposits`}>
+              {usd(got?.received ?? 0)}
+            </span>
+            <span className="num text-right">—</span>
+            <span className="num text-right font-medium">{usd(got?.received ?? 0)}</span>
+            <span className="flex justify-end">
+              <button type="button" className="rounded border border-series-1/40 px-1 text-[10px] text-series-1 hover:bg-series-1/10" onClick={() => apply(x, null)} title="Add an income line from these deposits (you can edit it)">
                 add line
               </button>
-            </div>
-          ))}
-        </div>
-      )}
+            </span>
+          </div>
+        );
+      })}
       {net.taxes.length > 0 && <TaxBreakdown taxes={net.taxes} />}
       {net.notes.length > 0 && (
         <ul className="mt-1 space-y-0.5 text-[10px] text-amber-300">
@@ -512,7 +512,7 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
           <span />
           <span>{year} take-home</span>
           <span className="text-[10px] font-normal text-muted-foreground">{covered ? `statements through ${shortDate(covered)}` : "no statements yet"}</span>
-          <span className="num text-right" title={inc?.estimated ? `+ ${usd(inc.estimated)} estimated for paychecks missing from your statements` : undefined}>
+          <span className="num text-right" title={inc?.estimated ? `+ ${usd(inc.estimated)} estimated for paychecks missing from your statements` : "Pay deposits only (Zelle, refunds and cash aren't income; see Analysis)"}>
             {inc ? usd(inc.received + inc.estimated) : "—"}
           </span>
           <span className="num text-right">{usd(aheadTotal)}</span>

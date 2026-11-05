@@ -97,7 +97,7 @@ export const CATEGORY_RULES: [string, RegExp][] = [
   ["Health", /campus rec|barber|fitness|\bgym\b|ymca|pharma|shoppers drug|rexall|cvs|walgreens|clinic|dental|physio/i],
   ["Education", /tuition|university|college|bookstore|coursera/i],
   ["Insurance", /insurance|assurance/i],
-  ["Fees & interest", /interest charge|service fee|\bnsf\b|overdraft|annual fee/i],
+  ["Fees & interest", /interest charge|service fee|\bnsf\b|overdraft|annual fee|membership fee/i],
 ];
 
 /** Money sent to people or other accounts (Zelle, Remitly, brokerage...). Out = spending (Other), in = income. */

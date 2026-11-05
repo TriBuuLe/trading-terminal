@@ -32,8 +32,13 @@ export interface YearIncome {
   year: number;
   coveredThrough: string | null; // last imported transaction
   lines: LineIncome[];
+  /** Payroll deposits from employers that have no income line yet (counted: it's pay). */
+  unlinked: { employer: string; received: number; deposits: number }[];
+  /** Money in that isn't pay (Zelle from people, refunds, cash, other deposits): not income here; see Analysis. */
   other: { received: number; sources: { label: string; total: number }[] };
-  received: number;
+  /** Every deposit marked Income (Analysis' "money in"), for reference. */
+  allMoneyIn: number;
+  received: number; // pay received: income lines + employers without a line
   estimated: number;
   ahead: number;
   total: number; // received + estimated + ahead
@@ -136,7 +141,18 @@ export function yearIncome(p: Profile, txs: PayTx[], year: number, _statementSta
     return { id: line.id, name: line.name, received: round2(received), deposits, estimated: round2(estimated), estimatedDates, ahead: round2(ahead), aheadCount, total: round2(received + estimated + ahead), flag };
   });
 
-  // Everything else that came in: Zelle from people, refunds, cash, payroll from employers with no line
+  // Payroll from employers with no income line: still pay
+  const unlinkedMap = new Map<string, { employer: string; received: number; deposits: number }>();
+  for (const x of inYear.filter((x) => !used.has(x) && PAYCHECK.test(x.description))) {
+    const e = payer(x.description);
+    const g = unlinkedMap.get(e) ?? { employer: e, received: 0, deposits: 0 };
+    g.received += x.amount;
+    g.deposits++;
+    unlinkedMap.set(e, g);
+    used.add(x);
+  }
+  const unlinked = [...unlinkedMap.values()].map((g) => ({ ...g, received: round2(g.received) })).sort((a, b) => b.received - a.received);
+  // Everything else that came in (not pay): Zelle from people, refunds, cash, other deposits
   const rest = inYear.filter((x) => !used.has(x));
   const bySource = new Map<string, number>();
   for (const x of rest) {
@@ -144,13 +160,16 @@ export function yearIncome(p: Profile, txs: PayTx[], year: number, _statementSta
     bySource.set(label, (bySource.get(label) ?? 0) + x.amount);
   }
   const otherReceived = round2(rest.reduce((s, x) => s + x.amount, 0));
-  const received = round2(inYear.reduce((s, x) => s + x.amount, 0));
+  const allMoneyIn = round2(inYear.reduce((s, x) => s + x.amount, 0));
+  const received = round2(lines.reduce((s, l) => s + l.received, 0) + unlinked.reduce((s, u) => s + u.received, 0));
   const ahead = round2(lines.reduce((s, l) => s + l.ahead, 0));
   const estimated = round2(lines.reduce((s, l) => s + l.estimated, 0));
   return {
     year,
     coveredThrough,
     lines,
+    unlinked,
+    allMoneyIn,
     other: { received: otherReceived, sources: [...bySource.entries()].map(([label, total]) => ({ label, total: round2(total) })).sort((a, b) => b.total - a.total) },
     received,
     estimated,

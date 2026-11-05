@@ -22,17 +22,18 @@ const txs = [
 
 describe("year income that adds up with statements", () => {
   const r = yearIncome(profile, txs, 2026);
-  it("received = every deposit marked Income (same as Analysis), split by line and other", () => {
-    // 7 × 1,325.47 = 9,278.29; + 4,000 + 50 = 13,328.29
-    expect(r.received).toBe(13328.29);
+  it("received = pay (income lines + employers without a line); other deposits aren't income here", () => {
+    // IBM 7 × 1,325.47 = 9,278.29; Graebel 4,000 + Zelle 50 are other money in (Analysis still counts them)
+    expect(r.received).toBe(9278.29);
     expect(r.lines.find((l) => l.id === "ibm")).toMatchObject({ received: 9278.29, deposits: 7 });
     expect(r.other.received).toBe(4050);
+    expect(r.allMoneyIn).toBe(13328.29);
   });
   it("still expected = paychecks after the last statement (Oct 30 … Dec 25, one week behind) + payments still ahead", () => {
     // 9 IBM checks × 1,325.47 = 11,929.23; + 667 on Dec 18
     expect(r.lines.find((l) => l.id === "ibm")).toMatchObject({ ahead: 11929.23, aheadCount: 9 });
     expect(r.ahead).toBe(12596.23);
-    expect(r.total).toBe(25924.52);
+    expect(r.total).toBe(21874.52); // 9,278.29 + 12,596.23
     expect(r.aheadByMonth.slice(9)).toEqual([1325.47, 5301.88, 5968.88]);
   });
   it("a one-time payment that's already due but has no deposit is flagged, not counted", () => {
@@ -51,5 +52,15 @@ describe("paychecks missing from your statements", () => {
     expect(l).toMatchObject({ received: 6248.77, estimated: 2730.24, estimatedDates: ["2026-01-30", "2026-02-13"], ahead: 0 });
     expect(l.total).toBe(8979.01); // 6,248.77 + 2 × 1,365.12
     expect(r.total).toBe(8979.01);
+  });
+});
+
+describe("no income lines yet", () => {
+  it("payroll deposits show per employer (counted as pay), not lumped with other money in", () => {
+    const empty: Profile = { ...profile, incomes: [] };
+    const r = yearIncome(empty, [...ibm, { date: "2026-08-02", description: "Zelle payment from SAM", amount: 50, category: "Income" }], 2026);
+    expect(r.unlinked).toEqual([{ employer: "IBM", received: 9278.29, deposits: 7 }]);
+    expect(r.received).toBe(9278.29);
+    expect(r.other.received).toBe(50);
   });
 });

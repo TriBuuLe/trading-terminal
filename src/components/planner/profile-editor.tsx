@@ -604,12 +604,12 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
   const firstAhead = yq.data?.progress?.remaining.months[0];
   const openFrom = firstAhead ? Number(firstAhead.slice(5, 7)) - 1 : 0;
   const aheadLabel = openFrom > 0 ? `${MONTH_ABBR[openFrom]}–Dec` : "all year";
-  const useProposed = (months: number[], annual: number) => (openFrom > 0 ? setAhead(months, round2(annual / 12), openFrom) : spreadAnnual(annual));
+  const proposedMonths = (months: number[], annual: number) => (openFrom > 0 ? setAhead(months, round2(annual / 12), openFrom) : spreadAnnual(annual));
   const goalsNeedYear = round2((yq.data?.longTerm ?? []).reduce((t, g) => t + g.neededPerMonth, 0) * 12);
   const debtYear = p.debts.reduce((t, d) => t + Math.min(d.minPayment, d.balance), 0) * 12;
   const prop = proposeWants({ budget: plan.budget, income, debtMinimumsYear: debtYear, goalsNeedYear, statementAvg: avgOf });
   const proposedOf = (cat: string) => prop.rows.find((r) => r.category === cat)?.proposed ?? null;
-  const applyProposal = () => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r) => (r.kind === "want" && proposedOf(r.category) !== null ? { ...r, months: useProposed(r.months, proposedOf(r.category)!) } : r)) }));
+  const applyProposal = () => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r) => (r.kind === "want" && proposedOf(r.category) !== null ? { ...r, months: proposedMonths(r.months, proposedOf(r.category)!) } : r)) }));
 
   const missing = SPENDING_CATEGORIES.filter((c) => !plan.budget.some((r) => r.category === c.name)).sort((a, b) => (avgOf(b.name) ?? 0) - (avgOf(a.name) ?? 0));
   const rows = [...plan.budget].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "need" ? -1 : 1));
@@ -682,7 +682,7 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
             est: avgOf(r.category) !== null ? `${whole0(avgOf(r.category)!)} × 12 = ${whole0(avgOf(r.category)! * 12)}` : "—",
             proposed:
               r.kind === "want" && proposedOf(r.category) !== null ? (
-                <button type="button" className="text-series-1 hover:underline" title={`Use ${whole0(proposedOf(r.category)! / 12)}/mo for ${aheadLabel} (proposed ${whole0(proposedOf(r.category)!)}/yr ÷ 12)`} onClick={() => setRow(r.category, useProposed(r.months, proposedOf(r.category)!))}>
+                <button type="button" className="text-series-1 hover:underline" title={`Use ${whole0(proposedOf(r.category)! / 12)}/mo for ${aheadLabel} (proposed ${whole0(proposedOf(r.category)!)}/yr ÷ 12)`} onClick={() => setRow(r.category, proposedMonths(r.months, proposedOf(r.category)!))}>
                   {whole0(proposedOf(r.category)!)}
                 </button>
               ) : null,

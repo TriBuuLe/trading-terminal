@@ -34,10 +34,10 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     ];
     expect((await request.post("/api/finances/transactions", { data: { rows } })).ok()).toBe(true);
     // Uploading the same statement again saves nothing; an overlapping one saves only the new rows.
-    expect(await (await request.post("/api/finances/transactions", { data: { rows } })).json()).toEqual({ saved: 0, duplicates: rows.length });
+    expect(await (await request.post("/api/finances/transactions", { data: { rows } })).json()).toMatchObject({ saved: 0, duplicates: rows.length });
     const overlap = [rows[0]!, { date: `${y}-10-21`, description: "PRESTO FARE", amount: -8.12, category: "Transportation" }, { date: `${y}-10-21`, description: "PRESTO FARE", amount: -8.12, category: "Transportation" }];
-    expect(await (await request.post("/api/finances/transactions", { data: { rows: overlap } })).json()).toEqual({ saved: 2, duplicates: 1 }); // two real same-day fares both kept
-    expect(await (await request.post("/api/finances/transactions", { data: { rows: overlap } })).json()).toEqual({ saved: 0, duplicates: 3 });
+    expect(await (await request.post("/api/finances/transactions", { data: { rows: overlap } })).json()).toMatchObject({ saved: 2, duplicates: 1 }); // two real same-day fares both kept
+    expect(await (await request.post("/api/finances/transactions", { data: { rows: overlap } })).json()).toMatchObject({ saved: 0, duplicates: 3 });
 
     await page.goto("/");
     await page.getByRole("button", { name: "Analysis", exact: true }).click();
@@ -73,17 +73,30 @@ test("analysis: take-home for the year, spending by category, needs attention", 
 
     // My finances: budget categories are a dropdown from the shared list; an old name offers its standard one.
     await page.getByRole("button", { name: "My finances", exact: true }).click();
-    await expect(page.getByRole("button", { name: "use Entertainment?" })).toBeVisible();
-    await page.getByRole("button", { name: "use Entertainment?" }).click();
-    await expect(page.getByRole("button", { name: "use Entertainment?" })).toHaveCount(0);
     // Income from your transactions: the ACME paychecks (Sep 12, Oct 12) propose replacing the overlapping "Co-op" line.
     await expect(page.getByText("Payroll deposits found")).toBeVisible();
     await expect(page.getByText(/\$2,650\.00 monthly · 2 deposits/)).toBeVisible();
     await page.getByRole("button", { name: "apply to “Co-op”" }).click();
     await expect(page.getByText("matches “Co-op”")).toBeVisible();
     // Budget lines show your actual average; a category you spend on without a line is offered with it.
-    await expect(page.getByRole("button", { name: /\+ Transportation \(~\$\d+\/mo actual\)/ })).toBeVisible();
+    // The year budget: Jan–Dec per category (rent $900 Jan–Apr, $1,200 from May = 3,600 + 9,600 = $13,200 a year).
+    await expect(page.getByText(`${y} budget & savings plan`)).toBeVisible();
+    await expect(page.getByLabel("Rent annual budget", { exact: true })).toHaveValue("13200");
+    // A category you spend on without a budget row is offered with its estimate (average × 12, labeled as such).
+    await expect(page.getByRole("button", { name: /\+ Transportation · est\. \$[\d,]+\/yr/ })).toBeVisible();
+    // December goals: save $1,200 (spread $100/month) and invest $600.
+    await page.getByLabel("Save (cash) December goal").fill("1200");
+    await page.getByLabel("Invest December goal").fill("600");
+    await expect(page.getByLabel("Save (cash) Jan", { exact: true })).toHaveValue("100");
     await page.screenshot({ path: "test-results/finances.png", fullPage: true });
+    await page.getByRole("button", { name: "Save & recalculate" }).click();
+    await expect(page.getByText("All changes saved")).toBeVisible();
+    // My plan: the year's goal and plan vs statements.
+    await page.getByRole("button", { name: "My plan", exact: true }).click();
+    await expect(page.getByText(`${y} goal: save + invest`)).toBeVisible();
+    await expect(page.getByText("$1,800").first()).toBeVisible();
+    await expect(page.getByText(`Plan vs statements, ${y}`)).toBeVisible();
+    await page.screenshot({ path: "test-results/plan.png", fullPage: true });
   } finally {
     await request.delete("/api/finances/export");
   }

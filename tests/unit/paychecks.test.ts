@@ -95,3 +95,12 @@ describe("paychecks found in transactions", () => {
     expect(lineMatchesPattern({ id: "a", ...found[0]!.line }, found[0]!)).toBe(true);
   });
 });
+
+describe("one-time payments (bonus)", () => {
+  it("the whole amount in the month it's paid, nothing in other months", () => {
+    const bonus: IncomeStream = { id: "b", name: "Signing bonus", amount: 4000, frequency: "once", kind: "bonus", basis: "net", firstPayDate: "2026-07-20" };
+    expect(incomeInMonth([bonus], "2026-07")).toBe(4000);
+    expect(incomeInMonth([bonus], "2026-08")).toBe(0);
+    expect(incomeInMonth([bonus], "2027-07")).toBe(0);
+  });
+});

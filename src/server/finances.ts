@@ -7,6 +7,8 @@ import { addMonths } from "@/lib/planner/core";
 import { buildPlan, type Plan } from "@/lib/planner/plan";
 import { analyzeSpending, type SpendingAnalysis } from "@/lib/planner/spending";
 import { yearSummary, type YearSummary } from "@/lib/planner/summary";
+import { creditPaychecks, ensureYearPlan, noteBalanceEdit, syncPayDates, withPlanExpenses } from "@/lib/planner/sync";
+import { longTermGoals, plannedMonths, progress, type MonthActual } from "@/lib/planner/yearplan";
 import { suggestCategory, type MyRules } from "@/lib/planner/csv";
 import { assumptionsSchema, profileSchema } from "@/lib/planner/schema";
 import type { Assumptions, Profile } from "@/lib/planner/types";
@@ -21,12 +23,28 @@ import { env } from "./env";
 const key = () => parseKey(env().DATA_ENCRYPTION_KEY);
 export const thisMonth = () => etParts(new Date()).date.slice(0, 7);
 
-/** The saved profile, with any finished months auto-applied first (if auto-update is on). */
-export async function getProfile(): Promise<Profile | null> {
-  await applyAutoRoll();
+async function readProfile(): Promise<Profile | null> {
   const rows = await db().select().from(finRecords).where(eq(finRecords.key, "profile")).limit(1);
-  if (!rows[0]) return null;
-  return profileSchema.parse(decryptJson(rows[0].ciphertext, "fin:profile", key()));
+  return rows[0] ? profileSchema.parse(decryptJson(rows[0].ciphertext, "fin:profile", key())) : null;
+}
+
+async function writeProfile(p: Profile): Promise<void> {
+  const valid = profileSchema.parse(withPlanExpenses(p));
+  const ciphertext = encryptJson(valid, "fin:profile", key());
+  await db()
+    .insert(finRecords)
+    .values({ key: "profile", ciphertext, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: finRecords.key, set: { ciphertext, updatedAt: new Date() } });
+}
+
+/** The saved profile. Makes sure this calendar year's plan exists (started from last year's, previous years kept). */
+export async function getProfile(): Promise<Profile | null> {
+  const p = await readProfile();
+  if (!p) return null;
+  const today = etParts(new Date()).date;
+  const r = ensureYearPlan(p, Number(today.slice(0, 4)), today);
+  if (r.changed) await writeProfile(r.profile);
+  return withPlanExpenses(r.profile);
 }
 
 /**
@@ -76,13 +94,26 @@ export async function netWorthHistory(): Promise<RollEntry[]> {
   return rows[0] ? decryptJson<RollEntry[]>(rows[0].ciphertext, "fin:networth_history", key()) : [];
 }
 
+/**
+ * Save the profile: budget lines come from the year plans, first/last paycheck
+ * dates from payroll deposits, and a newly typed balance for the synced account
+ * resets the date deposits are counted from.
+ */
 export async function saveProfile(p: Profile): Promise<void> {
-  const valid = profileSchema.parse(p);
-  const ciphertext = encryptJson(valid, "fin:profile", key());
-  await db()
-    .insert(finRecords)
-    .values({ key: "profile", ciphertext, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: finRecords.key, set: { ciphertext, updatedAt: new Date() } });
+  const prev = await readProfile();
+  const today = etParts(new Date()).date;
+  const txs = await listTransactions();
+  await writeProfile(syncPayDates(noteBalanceEdit(prev, profileSchema.parse(p), today), txs));
+}
+
+/** After an import: add new paycheck deposits to the synced account (once each) and refresh paycheck dates. */
+async function afterImport(): Promise<{ credited: number; amount: number }> {
+  const p = await readProfile();
+  if (!p) return { credited: 0, amount: 0 };
+  const txs = await listTransactions();
+  const r = creditPaychecks(p, txs);
+  await writeProfile(syncPayDates(r.profile, txs));
+  return { credited: r.credited.length, amount: Math.round(r.credited.reduce((s, c) => s + c.amount, 0) * 100) / 100 };
 }
 
 export async function getAssumptions(): Promise<Assumptions> {
@@ -167,7 +198,7 @@ const txKey = (t: { date: string; description: string; amount: number }) => `${t
  * description and amount, counted, so two identical coffees the same day still
  * count twice if the file has them twice). Re-uploading a file is harmless.
  */
-export async function addTransactions(rows: Omit<StoredTx, "id">[]): Promise<{ saved: number; duplicates: number }> {
+export async function addTransactions(rows: Omit<StoredTx, "id">[]): Promise<{ saved: number; duplicates: number; paychecksCredited?: number; creditedAmount?: number }> {
   if (!rows.length) return { saved: 0, duplicates: 0 };
   const k = key();
   const months = [...new Set(rows.map((r) => r.date.slice(0, 7)))];
@@ -194,7 +225,8 @@ export async function addTransactions(rows: Omit<StoredTx, "id">[]): Promise<{ s
       }
     });
   }
-  return { saved: fresh.length, duplicates: rows.length - fresh.length };
+  const synced = fresh.length ? await afterImport() : { credited: 0, amount: 0 };
+  return { saved: fresh.length, duplicates: rows.length - fresh.length, paychecksCredited: synced.credited, creditedAmount: synced.amount };
 }
 
 /** Flip the sign of every transaction in a month (fix a credit-card import saved the wrong way round). */
@@ -336,4 +368,30 @@ export async function deleteAll(): Promise<void> {
     await tx.delete(finRecords);
     await tx.delete(settings).where(eq(settings.key, "planner_assumptions"));
   });
+}
+
+/**
+ * This year's plan vs your statements, plus long-term goals. Net worth = accounts −
+ * debts, plus money moved to investing when no investment account is entered.
+ */
+export async function getYearProgress(year: number) {
+  const profile = await getProfile();
+  if (!profile) return null;
+  const today = etParts(new Date()).date;
+  const plan = profile.yearPlans?.[String(year)] ?? null;
+  const txs = await listTransactions();
+  const s = yearSummary({ profile, txs, year, today });
+  const hasInvestAccount = profile.accounts.some((a) => !["CASH", "HISA"].includes(a.type) && a.balance > 0);
+  const netWorth =
+    profile.accounts.reduce((t, a) => t + a.balance, 0) - profile.debts.reduce((t, d) => t + d.balance, 0) + (hasInvestAccount ? 0 : s.investments.allTime.net);
+  const actuals: MonthActual[] = s.months.map((m) => ({ month: m.month, income: m.income, spent: m.spent, invested: m.invested, status: m.status }));
+  return {
+    year,
+    plan,
+    planned: plan ? plannedMonths(plan, profile) : null,
+    progress: plan ? progress(plan, profile, actuals, today) : null,
+    longTerm: longTermGoals(profile, profile.yearPlans?.[today.slice(0, 4)] ?? plan, netWorth, today),
+    netWorth: Math.round(netWorth * 100) / 100,
+    years: Object.keys(profile.yearPlans ?? {}).sort(),
+  };
 }

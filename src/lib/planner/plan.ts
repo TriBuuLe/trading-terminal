@@ -108,10 +108,12 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
   const runs = opts.runs ?? 5000;
   const seed = opts.seed ?? 42;
   // Take-home income: "before tax" lines are converted with the year's estimated taxes.
-  const net = netIncome(p, asOf, 12);
+  // The calendar year (Jan–Dec of asOf's year), matching the year plan in My finances.
+  const yearStart = `${asOf.slice(0, 4)}-01`;
+  const net = netIncome(p, yearStart, 12);
   const income = net.average;
-  // Budget averaged over the next 12 months (date-ranged lines like a 4-month lease).
-  const expenses = averageExpenses(p.expenses, asOf, 12);
+  // Budget averaged over the calendar year (months can differ: rent changes, one-offs).
+  const expenses = averageExpenses(p.expenses, yearStart, 12);
   const cf = cashFlow(income, expenses, p.debts);
   const score = riskScore(p.risk);
   const effective = p.riskOverride ?? score;
@@ -124,7 +126,8 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
 
   // Goal requirements (real dollars).
   const goalPlans: GoalPlan[] = [];
-  for (const g of [...p.goals].sort((x, y) => x.priority - y.priority)) {
+  // Net-worth targets are tracked as long-term goals (My plan), not funded like a savings goal.
+  for (const g of [...p.goals].filter((x) => x.kind !== "net_worth").sort((x, y) => x.priority - y.priority)) {
     const monthsLeft = Math.max(1, monthsBetween(asOf, g.targetDate));
     const yearsLeft = monthsLeft / 12;
     const band = horizonBand(yearsLeft);

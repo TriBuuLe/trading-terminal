@@ -1,7 +1,9 @@
+import type { YearPlan } from "./yearplan";
+
 /** Financial-planner domain types. All money is in dollars of the stated currency. */
 
 export type Country = "CA" | "US";
-export type Frequency = "hourly" | "weekly" | "biweekly" | "semimonthly" | "monthly" | "annual";
+export type Frequency = "hourly" | "weekly" | "biweekly" | "semimonthly" | "monthly" | "annual" | "once";
 export type YearMonth = string; // "YYYY-MM"
 
 export interface IncomeStream {
@@ -39,6 +41,8 @@ export interface IncomeStream {
   workdays?: number[];
   /** The pay period ends this many days before payday (0 = on payday). */
   periodEndsDaysBefore?: number;
+  /** First/last paycheck dates were filled in from your payroll deposits (not typed). */
+  payDatesFromDeposits?: boolean;
 }
 
 export interface Expense {
@@ -79,7 +83,7 @@ export interface AssetAccount {
   balance: number;
 }
 
-export type GoalKind = "emergency" | "car" | "house" | "retirement" | "long_term" | "education" | "other";
+export type GoalKind = "emergency" | "car" | "house" | "retirement" | "long_term" | "education" | "net_worth" | "other";
 
 export interface Goal {
   id: string;
@@ -88,8 +92,10 @@ export interface Goal {
   target: number; // today's dollars
   targetDate: YearMonth;
   priority: number; // 1 = highest
-  /** Money already set aside for this goal. */
+  /** Money already set aside for this goal (for a net-worth goal: computed from your accounts). */
   current: number;
+  /** What you put toward it per month now (long-term goals); a net-worth goal uses the year plan's save + invest. */
+  monthlyContribution?: number;
 }
 
 export interface RiskAnswers {
@@ -127,8 +133,16 @@ export interface Profile {
   /** Your own category rules for transactions (see MyRules in csv.ts). */
   categoryRules?: { match: string; category: string }[];
   peerOutCategory?: string;
-  /** Monthly automatic balance updates (income in, spending and debt payments out). */
+  /** Monthly automatic balance updates (income in, spending and debt payments out). Replaced by cashSync. */
   autoRoll?: { enabled: boolean; cashAccountId: string; lastRolledMonth: YearMonth };
+  /**
+   * Paycheck deposits from imported statements are added to this account once each:
+   * only deposits dated after `balanceAsOf` (the day you last entered the balance),
+   * never twice (`credited` = transaction ids already added).
+   */
+  cashSync?: { enabled: boolean; accountId: string; balanceAsOf: string; credited: number[] };
+  /** One plan per calendar year (key "2026"); previous years are kept. */
+  yearPlans?: Record<string, YearPlan>;
 }
 
 export interface TaxFacts {

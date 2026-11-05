@@ -28,7 +28,7 @@ export interface PayTx {
   category: string;
 }
 
-const PAYCHECK = /payroll|direct dep|salary|pay ?cheque|paycheck/i;
+export const PAYCHECK = /payroll|direct dep|salary|pay ?cheque|paycheck/i;
 const dayMs = 86_400_000;
 const t = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

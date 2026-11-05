@@ -14,6 +14,7 @@ import { TAX_YEARS } from "@/lib/tax/rules";
 import type { YearTax } from "@/lib/tax/calc";
 import type { YearSummary } from "@/lib/planner/summary";
 import type { AccountType, Profile } from "@/lib/planner/types";
+import { addBudgetRow, fillFrom, newYearPlan, plannedMonths, spreadAnnual, sum, type YearPlan } from "@/lib/planner/yearplan";
 import { cn } from "@/lib/utils";
 
 /** Editable sections of the financial profile, shared by the onboarding wizard and "My finances". */
@@ -203,6 +204,15 @@ function IncomeEffect({ i, year }: { i: Profile["incomes"][number]; year: number
       </p>
     );
   }
+  if (i.frequency === "once") {
+    const paid = i.firstPayDate ?? null;
+    if (!paid) return <p className="text-[11px] text-amber-300">Enter the date it&apos;s paid.</p>;
+    return (
+      <p className="num text-[10px] text-muted-foreground">
+        {paid.startsWith(String(year)) ? <>{year}: {usd(total)}{label} in {paid.slice(0, 7)}</> : <>Paid {paid}: not in {year}</>}
+      </p>
+    );
+  }
   if (!i.repeatsYearly && i.startMonth && i.endMonth && i.endMonth < i.startMonth) return <p className="text-[11px] text-down">Ends before it starts. Fix the dates.</p>;
   const active = months.filter((m) => incomeInMonth([i], m) > 0).length;
   return (
@@ -351,6 +361,7 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
                     frequency: f,
                     ...(f === "hourly" && !i.hoursPerWeek ? { hoursPerWeek: 40, payEvery: "weekly" as const } : {}),
                     ...((f === "weekly" || f === "biweekly") && i.payDay === undefined ? { payDay: 5 } : {}),
+                    ...(f === "once" ? { kind: "bonus" as const } : {}),
                   });
                 }}
               >
@@ -360,6 +371,7 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
                 <option value="semimonthly">twice a month</option>
                 <option value="monthly">monthly</option>
                 <option value="annual">yearly</option>
+                <option value="once">once (bonus)</option>
               </select>
               {i.frequency === "hourly" && (
                 <>
@@ -379,7 +391,13 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
                 <option value="bonus">bonus</option>
                 <option value="other">other</option>
               </select>
-              {!scheduled(i) && (
+              {i.frequency === "once" && (
+                <>
+                  <span className="text-muted-foreground">paid on</span>
+                  <input aria-label="Paid on" type="date" className={inp} value={i.firstPayDate ?? ""} onChange={(e) => upd(i.id, { firstPayDate: e.target.value || null, startMonth: e.target.value ? e.target.value.slice(0, 7) : null })} />
+                </>
+              )}
+              {!scheduled(i) && i.frequency !== "once" && (
                 <>
                   <span className="text-muted-foreground">from</span>
                   <input aria-label="Start month" type="month" className={inp} value={i.startMonth ?? ""} onChange={(e) => upd(i.id, { startMonth: e.target.value || null })} />
@@ -522,6 +540,198 @@ export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
   );
 }
 
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const cell = "num h-6 w-[4.25rem] rounded border border-transparent bg-transparent px-1 text-right text-[11px] outline-none hover:border-input focus:border-ring focus:bg-background";
+const whole0 = (x: number) => `$${Math.round(x).toLocaleString("en-US")}`;
+
+/** One editable month cell; "→" copies it into every later month (a rent change from May on). */
+function MonthCell({ value, onChange, onFill, label }: { value: number; onChange: (n: number) => void; onFill?: () => void; label: string }) {
+  return (
+    <td className="group relative p-0">
+      <input aria-label={label} type="number" min={0} step={1} className={cell} value={Number.isFinite(value) ? value : 0} onChange={(e) => onChange(Number(e.target.value) || 0)} />
+      {onFill && (
+        <button
+          type="button"
+          tabIndex={-1}
+          title="Copy to the rest of the year"
+          aria-label={`${label}: copy to the rest of the year`}
+          onClick={onFill}
+          className="absolute top-0.5 right-0 hidden rounded px-0.5 text-[9px] text-series-1 group-focus-within:block group-hover:block"
+        >
+          →
+        </button>
+      )}
+    </td>
+  );
+}
+
+/**
+ * The calendar-year budget and savings plan: per category a Jan–Dec allocation
+ * (the annual budget is the sum), plus cash to save and money to invest each month.
+ * This is the plan; statements are compared against it under My plan and never change it.
+ */
+export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
+  const year = Number(ymOf(useNow(60 * 60_000)).slice(0, 4));
+  const plan = p.yearPlans?.[String(year)] ?? newYearPlan(p, year, new Date().toISOString().slice(0, 10));
+  const setPlan = (fn: (pl: YearPlan) => YearPlan) => set((x) => ({ ...x, yearPlans: { ...(x.yearPlans ?? {}), [String(year)]: fn(x.yearPlans?.[String(year)] ?? plan) } }));
+  const setRow = (k: number, months: number[]) => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r, j) => (j === k ? { ...r, months } : r)) }));
+  const planned = plannedMonths(plan, p);
+  const income = planned.map((m) => m.income);
+  // Estimates from statements: the average of full months × 12 (an estimate, not actual annual spending).
+  const actual = useQuery({ queryKey: ["summary", year], queryFn: () => api<{ summary: YearSummary | null }>(`/api/finances/summary?year=${year}`) });
+  const s = actual.data?.summary;
+  const range = s?.fullMonths.length ? `${MONTH_ABBR[Number(s.fullMonths[0]!.slice(5)) - 1]}–${MONTH_ABBR[Number(s.fullMonths.at(-1)!.slice(5)) - 1]}, ${s.fullMonths.length} full months` : "";
+  const est = (cat: string) => {
+    const a = s?.categories.find((c) => c.category === cat)?.avgPerMonth;
+    return a ? { avg: Math.round(a), year: Math.round(a) * 12 } : null;
+  };
+  const missing = SPENDING_CATEGORIES.filter((c) => !plan.budget.some((r) => r.category === c.name)).sort((a, b) => (est(b.name)?.year ?? 0) - (est(a.name)?.year ?? 0));
+  const spendTotal = planned.map((m) => m.spending);
+  const unassigned = planned.map((m) => m.unassigned);
+  const target = (key: "save" | "invest", label: string) => (
+    <tr className="border-t border-border/50">
+      <td className="py-0.5 pr-2 font-sans text-xs">{label}</td>
+      {plan[key].map((v, k) => (
+        <MonthCell
+          key={k}
+          label={`${label} ${MONTH_ABBR[k]}`}
+          value={v}
+          onChange={(n) => setPlan((pl) => ({ ...pl, [key]: pl[key].map((x, j) => (j === k ? n : x)) }))}
+          onFill={k < 11 ? () => setPlan((pl) => ({ ...pl, [key]: fillFrom(pl[key], k) })) : undefined}
+        />
+      ))}
+      <td className="p-0 pl-1">
+        <input
+          aria-label={`${label} December goal`}
+          type="number"
+          min={0}
+          className={cn(cell, "w-20 font-medium")}
+          value={sum(plan[key])}
+          onChange={(e) => setPlan((pl) => ({ ...pl, [key]: spreadAnnual(Number(e.target.value) || 0) }))}
+        />
+      </td>
+      <td />
+    </tr>
+  );
+  return (
+    <Section title={`${year} budget & savings plan`} hint="Plan once at the start of the year. Year column = annual total (edit it to spread evenly); → copies a month into the rest of the year.">
+      <div className="overflow-x-auto">
+        <table className="num w-full text-[11px]">
+          <thead className="text-[10px] tracking-wider text-muted-foreground uppercase">
+            <tr>
+              <th className="py-1 pr-2 text-left font-medium">{year}</th>
+              {MONTH_ABBR.map((m) => (
+                <th key={m} className="px-1 text-right font-medium">
+                  {m}
+                </th>
+              ))}
+              <th className="pl-1 text-right font-medium">Year</th>
+              <th className="pl-2 text-right font-medium" title="Average of full statement months × 12 (an estimate)">
+                Statements est.
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="text-muted-foreground">
+              <td className="py-0.5 pr-2 font-sans text-xs">Take-home (income lines)</td>
+              {income.map((v, k) => (
+                <td key={k} className="px-1 text-right">
+                  {whole0(v)}
+                </td>
+              ))}
+              <td className="pl-1 text-right">{whole0(sum(income))}</td>
+              <td />
+            </tr>
+            {plan.budget.map((r, k) => {
+              const e = est(r.category);
+              return (
+                <tr key={r.category} className="border-t border-border/50">
+                  <td className="py-0.5 pr-2 font-sans text-xs whitespace-nowrap">
+                    {r.category}
+                    <button
+                      type="button"
+                      className="ml-1 text-[10px] text-muted-foreground hover:text-foreground"
+                      title="Need = must pay; want = could cut"
+                      onClick={() => setPlan((pl) => ({ ...pl, budget: pl.budget.map((x, j) => (j === k ? { ...x, kind: x.kind === "need" ? "want" : "need" } : x)) }))}
+                    >
+                      {r.kind}
+                    </button>
+                    <button type="button" className="ml-1 text-[10px] text-muted-foreground hover:text-down" aria-label={`Remove ${r.category}`} onClick={() => setPlan((pl) => ({ ...pl, budget: pl.budget.filter((_, j) => j !== k) }))}>
+                      ×
+                    </button>
+                  </td>
+                  {r.months.map((v, m) => (
+                    <MonthCell
+                      key={m}
+                      label={`${r.category} ${MONTH_ABBR[m]}`}
+                      value={v}
+                      onChange={(n) => setRow(k, r.months.map((x, j) => (j === m ? n : x)))}
+                      onFill={m < 11 ? () => setRow(k, fillFrom(r.months, m)) : undefined}
+                    />
+                  ))}
+                  <td className="p-0 pl-1">
+                    <input aria-label={`${r.category} annual budget`} type="number" min={0} className={cn(cell, "w-20 font-medium")} value={sum(r.months)} onChange={(e) => setRow(k, spreadAnnual(Number(e.target.value) || 0))} />
+                  </td>
+                  <td className="pl-2 text-right whitespace-nowrap text-muted-foreground">
+                    {e ? (
+                      <button type="button" className="hover:text-foreground" title={`Average ${whole0(e.avg)}/month over ${range} × 12. Click to use it for every month.`} onClick={() => setRow(k, Array.from({ length: 12 }, () => e.avg))}>
+                        {whole0(e.avg)} × 12 = {whole0(e.year)}
+                      </button>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="border-t border-border font-medium">
+              <td className="py-0.5 pr-2 font-sans text-xs">Spending</td>
+              {spendTotal.map((v, k) => (
+                <td key={k} className="px-1 text-right">
+                  {whole0(v)}
+                </td>
+              ))}
+              <td className="pl-1 text-right">{whole0(sum(spendTotal))}</td>
+              <td />
+            </tr>
+            {target("save", "Save (cash)")}
+            {target("invest", "Invest")}
+            <tr className="border-t border-border">
+              <td className="py-0.5 pr-2 font-sans text-xs text-muted-foreground">Unassigned</td>
+              {unassigned.map((v, k) => (
+                <td key={k} className={cn("px-1 text-right", v < 0 ? "text-down" : "text-muted-foreground")}>
+                  {whole0(v)}
+                </td>
+              ))}
+              <td className={cn("pl-1 text-right", sum(unassigned) < 0 ? "text-down" : "text-muted-foreground")}>{whole0(sum(unassigned))}</td>
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {missing.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {missing.map((c) => {
+            const e = est(c.name);
+            return (
+              <button
+                key={c.name}
+                type="button"
+                onClick={() => setPlan((pl) => addBudgetRow(pl, c.name, e?.avg ?? 0))}
+                title={e ? `Adds ${whole0(e.avg)} every month: your average over ${range} × 12 = ${whole0(e.year)} (an estimate)` : undefined}
+                className={cn("rounded border border-dashed px-1.5 py-0.5 text-[10px] hover:text-foreground", e ? "border-amber-500/50 text-amber-300" : "border-border text-muted-foreground")}
+              >
+                + {c.name}
+                {e && ` · est. ${whole0(e.year)}/yr`}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Section>
+  );
+}
+
 export function DebtSection({ p, set }: { p: Profile; set: Set }) {
   const upd = (id: string, patch: Partial<Profile["debts"][number]>) => set((x) => ({ ...x, debts: x.debts.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
   return (
@@ -578,31 +788,26 @@ export function AccountSection({ p, set }: { p: Profile; set: Set }) {
 
 /** Turn on monthly automatic balance updates. */
 function AutoRollControl({ p, set }: { p: Profile; set: Set }) {
-  const now = ymOf(useNow(60 * 60_000));
   const cashAccounts = p.accounts.filter((a) => a.type === "CASH" || a.type === "HISA");
-  const ar = p.autoRoll;
-  if (cashAccounts.length === 0) return <p className="mt-2 text-[11px] text-muted-foreground">Add a chequing (CASH) account to turn on automatic monthly updates.</p>;
-  const nextApply = ar?.enabled ? addMonths(ar.lastRolledMonth, 1) : now;
+  const cs = p.cashSync;
+  if (cashAccounts.length === 0) return null;
+  const today = new Date().toISOString().slice(0, 10);
   return (
-    <div className="mt-3 space-y-1 rounded border border-border p-2 text-xs">
+    <div className="mt-3 rounded border border-border p-2 text-xs">
       <label className="flex flex-wrap items-center gap-2">
         <input
           type="checkbox"
-          checked={ar?.enabled ?? false}
+          checked={cs?.enabled ?? false}
           onChange={(e) =>
-            set((x) => ({
-              ...x,
-              // Start from now: the first update applies THIS month once it ends (nothing retroactive).
-              autoRoll: { enabled: e.target.checked, cashAccountId: x.autoRoll?.cashAccountId ?? cashAccounts[0]!.id, lastRolledMonth: x.autoRoll?.enabled ? x.autoRoll.lastRolledMonth : addMonths(now, -1) },
-            }))
+            set((x) => ({ ...x, cashSync: { enabled: e.target.checked, accountId: x.cashSync?.accountId ?? cashAccounts[0]!.id, balanceAsOf: x.cashSync?.balanceAsOf ?? today, credited: x.cashSync?.credited ?? [] } }))
           }
         />
-        Update balances automatically each month in
+        Add imported paycheck deposits to
         <select
-          aria-label="Account for automatic updates"
+          aria-label="Account for paycheck deposits"
           className={inp}
-          value={ar?.cashAccountId ?? cashAccounts[0]!.id}
-          onChange={(e) => set((x) => ({ ...x, autoRoll: { enabled: x.autoRoll?.enabled ?? false, lastRolledMonth: x.autoRoll?.lastRolledMonth ?? addMonths(now, -1), cashAccountId: e.target.value } }))}
+          value={cs?.accountId ?? cashAccounts[0]!.id}
+          onChange={(e) => set((x) => ({ ...x, cashSync: { enabled: x.cashSync?.enabled ?? true, balanceAsOf: today, credited: x.cashSync?.credited ?? [], accountId: e.target.value } }))}
         >
           {cashAccounts.map((a) => (
             <option key={a.id} value={a.id}>
@@ -611,10 +816,11 @@ function AutoRollControl({ p, set }: { p: Profile; set: Set }) {
           ))}
         </select>
       </label>
-      <p className="text-[10px] text-muted-foreground">
-        After each month ends: + that month&apos;s take-home income, − spending, − minimum debt payments (debts get their interest and shrink by the payment). If you imported a bank
-        CSV for the month, the real transactions are used instead of the plan. {ar?.enabled ? `Next update: ${nextApply}, once it's over.` : ""} You can always correct a balance by hand.
-      </p>
+      {cs?.enabled && (
+        <p className="num mt-1 text-[10px] text-muted-foreground">
+          Balance entered {cs.balanceAsOf}: deposits dated after it are added once each when you import a statement ({cs.credited.length} so far). Editing the balance resets the date.
+        </p>
+      )}
     </div>
   );
 }
@@ -625,7 +831,7 @@ export function GoalSection({ p, set }: { p: Profile; set: Set }) {
   return (
     <Section
       title="Goals"
-      hint="Targets in today's dollars. Priority 1 is funded first."
+      hint="Targets in today's dollars. Priority 1 is funded first. Net-worth and long-term goals carry over every year and show under My plan."
       onAdd={() => set((x) => ({ ...x, goals: [...x.goals, { id: uid(), name: "New goal", kind: "other", target: 5000, targetDate: nextYear, priority: x.goals.length + 1, current: 0 }] }))}
       addLabel="Add goal"
     >
@@ -635,7 +841,7 @@ export function GoalSection({ p, set }: { p: Profile; set: Set }) {
           <div key={g.id} className="flex flex-wrap items-center gap-2 text-xs">
             <input aria-label="Goal name" className={cn(inp, "w-40")} value={g.name} onChange={(e) => upd(g.id, { name: e.target.value })} />
             <select aria-label="Goal type" className={inp} value={g.kind} onChange={(e) => upd(g.id, { kind: e.target.value as typeof g.kind })}>
-              {["emergency", "car", "house", "retirement", "long_term", "education", "other"].map((k) => (
+              {["emergency", "car", "house", "retirement", "long_term", "net_worth", "education", "other"].map((k) => (
                 <option key={k} value={k}>
                   {k.replace("_", " ")}
                 </option>
@@ -645,8 +851,21 @@ export function GoalSection({ p, set }: { p: Profile; set: Set }) {
             <Num label="Target amount" value={g.target} onChange={(n) => upd(g.id, { target: n })} />
             <span className="text-muted-foreground">by</span>
             <input aria-label="Target date" type="month" className={inp} value={g.targetDate} onChange={(e) => upd(g.id, { targetDate: e.target.value || nextYear })} />
-            <span className="text-muted-foreground">saved</span>
-            <Num label="Already saved" value={g.current} onChange={(n) => upd(g.id, { current: n })} className="w-24" />
+            {g.kind === "net_worth" ? (
+              <span className="text-[11px] text-muted-foreground">now = your accounts − debts + invested</span>
+            ) : (
+              <>
+                <span className="text-muted-foreground">saved</span>
+                <Num label="Already saved" value={g.current} onChange={(n) => upd(g.id, { current: n })} className="w-24" />
+              </>
+            )}
+            {(g.kind === "retirement" || g.kind === "long_term" || g.kind === "house") && (
+              <>
+                <span className="text-muted-foreground">adding</span>
+                <Num label="Monthly contribution" value={g.monthlyContribution ?? 0} onChange={(n) => upd(g.id, { monthlyContribution: n })} className="w-20" />
+                <span className="text-muted-foreground">/mo</span>
+              </>
+            )}
             <span className="text-muted-foreground">priority</span>
             <Num label="Priority" value={g.priority} onChange={(n) => upd(g.id, { priority: Math.max(1, Math.round(n)) })} className="w-12" />
             <Del label="Remove goal" onClick={() => set((x) => ({ ...x, goals: x.goals.filter((y) => y.id !== g.id) }))} />

@@ -65,6 +65,8 @@ export interface MonthRow {
   income: number | null; // from transactions; null = no transactions that month
   spent: number | null;
   saved: number | null;
+  /** Net moved to investment accounts that month (sent − came back). */
+  invested: number | null;
   planned: number; // take-home from your income lines
   budget: number; // budget lines active that month
   count: number;
@@ -198,6 +200,7 @@ export function yearSummary(i: { profile: Profile; txs: SummaryTx[]; year: numbe
       income: has ? round2(income) : null,
       spent: has ? round2(spent) : null,
       saved: has ? round2(income - spent) : null,
+      invested: has ? round2(-sum(mt.filter((t) => t.category === "Transfers" && BROKERAGE.test(t.description)))) : null,
       planned: planned[k]!,
       budget: round2(expenseInMonth(p.expenses, m)),
       count: mt.length,

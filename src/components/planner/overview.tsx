@@ -13,6 +13,7 @@ import type { Assumptions, Country } from "@/lib/planner/types";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorState, LoadingRows, Tag } from "../terminal/bits";
 import { BudgetCheck, type PlanResponseExtras } from "./budget-check";
+import { LongTermGoals, YearProgress } from "./year-progress";
 
 const SERIES = { needs: "#3987e5", wants: "#d95926", debt: "#c98500", savings: "#199e70" };
 
@@ -144,7 +145,7 @@ function IncomeTimeline({ plan }: { plan: Plan }) {
   const max = Math.max(1, ...months.map((m) => m.amount), plan.monthlyIncome);
   const zero = months.filter((m) => m.amount === 0).length;
   return (
-    <Card title="Income, month by month (next 12 months)">
+    <Card title="Income, month by month (Jan–Dec)">
       <div className="relative flex h-24 items-end gap-[2px]">
         <div className="pointer-events-none absolute inset-x-0 border-t border-dashed border-muted-foreground/60" style={{ bottom: `${(plan.monthlyIncome / max) * 100}%` }} title="12-month average" />
         {months.map((m) => (
@@ -162,7 +163,7 @@ function IncomeTimeline({ plan }: { plan: Plan }) {
         ))}
       </div>
       <p className="mt-1 text-[11px] text-muted-foreground">
-        Dashed line = the average the plan uses ({money(plan.monthlyIncome)}/mo). {zero > 0 && `${zero} of the next 12 months have no income entered. `}
+        Dashed line = the average the plan uses ({money(plan.monthlyIncome)}/mo). {zero > 0 && `${zero} months this year have no income entered. `}
         {zero > 0 && "If you'll be working then (another co-op term, a summer job, full-time after graduation), add it under My finances, or tick “repeats every year” on recurring terms."}
       </p>
     </Card>
@@ -295,8 +296,11 @@ export function PlanOverview({ country }: { country: Country }) {
         </div>
       )}
 
+      <YearProgress />
+      <LongTermGoals />
+
       <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
-        <Tile label="Avg monthly income" value={money(plan.monthlyIncome)} sub="take-home, next 12 months" />
+        <Tile label="Avg monthly income" value={money(plan.monthlyIncome)} sub={`take-home, Jan–Dec average`} />
         <Tile label="Left to save / month" value={<span className={plan.cashFlow.available < 0 ? "text-down" : ""}>{money(plan.cashFlow.available)}</span>} sub={`${plan.cashFlow.savingsRatePct}% savings rate`} />
         <Tile label="Goals need / month" value={money(plan.feasibility.needed)} sub={plan.feasibility.shortfall > 0 ? <span className="text-down">short {money(plan.feasibility.shortfall)}/mo</span> : "covered"} />
         <Tile label="Net worth today" value={money(plan.netWorth.current)} sub={`median in ${plan.netWorth.years}y: ${money(plan.netWorth.sim.p50, { compact: true, whole: true })} (today's $)`} />

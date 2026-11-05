@@ -6,11 +6,20 @@ const ym = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM");
 const id = z.string().min(1).max(40);
 
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD");
+const twelve = z.array(z.number().min(-1e7).max(1e7)).length(12);
+const yearPlanSchema = z.object({
+  year: z.number().int().min(2000).max(2100),
+  createdAt: isoDate,
+  opening: z.object({ asOf: isoDate, accounts: z.array(z.any()).max(50), debts: z.array(z.any()).max(50) }),
+  budget: z.array(z.object({ category: z.string().trim().min(1).max(40), kind: z.enum(["need", "want"]), months: twelve })).max(40),
+  save: twelve,
+  invest: twelve,
+});
 const incomeSchema = z.object({
   id,
   name: z.string().trim().min(1).max(60),
   amount: money,
-  frequency: z.enum(["hourly", "weekly", "biweekly", "semimonthly", "monthly", "annual"]),
+  frequency: z.enum(["hourly", "weekly", "biweekly", "semimonthly", "monthly", "annual", "once"]),
   hoursPerWeek: z.number().min(0).max(100).optional(),
   basis: z.enum(["net", "gross"]).optional(),
   kind: z.enum(["salary", "coop", "bonus", "other"]),
@@ -26,6 +35,7 @@ const incomeSchema = z.object({
   payEvery: z.enum(["weekly", "biweekly"]).optional(),
   workdays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
   periodEndsDaysBefore: z.number().int().min(0).max(30).optional(),
+  payDatesFromDeposits: z.boolean().optional(),
 });
 export const expenseSchema = z.object({
   id,
@@ -46,11 +56,12 @@ export const accountSchema = z.object({
 export const goalSchema = z.object({
   id,
   name: z.string().trim().min(1).max(60),
-  kind: z.enum(["emergency", "car", "house", "retirement", "long_term", "education", "other"]),
+  kind: z.enum(["emergency", "car", "house", "retirement", "long_term", "education", "net_worth", "other"]),
   target: money,
   targetDate: ym,
   priority: z.number().int().min(1).max(10),
   current: money,
+  monthlyContribution: z.number().min(0).max(1e7).optional(),
 });
 export const riskSchema = z.object({
   horizonYears: z.number().min(0).max(80),
@@ -92,6 +103,8 @@ export const profileSchema = z.object({
   autoRoll: z.object({ enabled: z.boolean(), cashAccountId: z.string().min(1).max(40), lastRolledMonth: ym }).optional(),
   budgetBasis: z.enum(["planned", "actual"]).optional(),
   categoryMap: z.record(z.string().max(40), z.string().max(40)).optional(),
+  cashSync: z.object({ enabled: z.boolean(), accountId: z.string().max(64), balanceAsOf: isoDate, credited: z.array(z.number().int()).max(20000) }).optional(),
+  yearPlans: z.record(z.string().regex(/^\d{4}$/), yearPlanSchema).optional(),
   categoryRules: z.array(z.object({ match: z.string().trim().min(2).max(60), category: z.string().trim().min(1).max(40) })).max(200).optional(),
   peerOutCategory: z.string().trim().min(1).max(40).optional(),
 });

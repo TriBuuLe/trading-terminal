@@ -4,7 +4,8 @@ import type { Debt, Expense, Frequency, IncomeStream, RiskAnswers, YearMonth } f
 
 export const round2 = (x: number) => Math.round((x + Number.EPSILON) * 100) / 100;
 
-const PER_YEAR: Record<Exclude<Frequency, "hourly">, number> = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, annual: 1 };
+// "once" (a bonus) has no monthly equivalent: it counts in the month it's paid (see incomeInMonth).
+const PER_YEAR: Record<Exclude<Frequency, "hourly">, number> = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, annual: 1, once: 0 };
 
 /** Monthly equivalent. Hourly = rate × hours/week × 52 weeks ÷ 12 months. */
 export function monthlyEquivalent(amount: number, frequency: Frequency, hoursPerWeek = 40): number {
@@ -111,7 +112,12 @@ export function incomeInMonth(streams: IncomeStream[], month: YearMonth): number
     const sch = paySchedule(s);
     const startYm = (s.employmentStart ?? s.firstPayDate)?.slice(0, 7) ?? s.startMonth;
     let amt: number;
-    if (sch) amt = paychecks(s, `${month}-01`, lastDay(month)).reduce((a, p) => a + p.amount, 0);
+    if (s.frequency === "once") {
+      // A one-time payment (bonus): the whole amount in the month it's paid.
+      const paid = s.firstPayDate?.slice(0, 7) ?? s.startMonth;
+      if (paid !== month) continue;
+      amt = s.amount;
+    } else if (sch) amt = paychecks(s, `${month}-01`, lastDay(month)).reduce((a, p) => a + p.amount, 0);
     else if (s.employmentStart || s.employmentEnd) {
       // monthly / semimonthly / annual with employment dates: active by month
       if ((s.employmentStart && month < s.employmentStart.slice(0, 7)) || (s.employmentEnd && month > s.employmentEnd.slice(0, 7))) continue;

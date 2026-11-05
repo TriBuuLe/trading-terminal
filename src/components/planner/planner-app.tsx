@@ -14,7 +14,7 @@ import { ErrorState, LoadingRows } from "../terminal/bits";
 import { Analysis } from "./analysis";
 import { AssumptionsAndData } from "./assumptions";
 import { PlanOverview } from "./overview";
-import { AccountSection, BasicsSection, DebtSection, emptyProfile, ExpenseSection, GoalSection, IncomeSection, RiskSection, SettingsSection, TaxFactsSection, WIZARD_STEPS } from "./profile-editor";
+import { AccountSection, BasicsSection, DebtSection, emptyProfile, GoalSection, IncomeSection, RiskSection, SettingsSection, TaxFactsSection, WIZARD_STEPS, YearBudgetSection } from "./profile-editor";
 import { MockAccounts } from "./accounts";
 import { Transactions } from "./transactions";
 
@@ -119,7 +119,7 @@ function MyFinances({ initial }: { initial: Profile }) {
       </div>
       <BasicsSection p={p} set={set} />
       <IncomeSection p={p} set={set} />
-      <ExpenseSection p={p} set={set} />
+      <YearBudgetSection p={p} set={set} />
       <DebtSection p={p} set={set} />
       <AccountSection p={p} set={set} />
       <GoalSection p={p} set={set} />

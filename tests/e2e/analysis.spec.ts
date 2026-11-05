@@ -87,26 +87,18 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     // ▸ opens a line's editor with labeled fields
     await page.getByRole("button", { name: "Edit Summer job" }).click();
     await expect(page.getByLabel("Income name")).toHaveValue("Summer job");
-    // The whole-year plan: each category's 2026 amount = actual in months with a complete statement + budget for the others.
-    await expect(page.getByText(`${y} plan`, { exact: true })).toBeVisible();
-    // Rent: Jan–Apr 4 × 900 + May–Aug 4 × 1,200 + Sep–Oct actual $0 (no rent transactions) + Nov–Dec 2 × 1,200 = 10,800
-    await expect(page.getByLabel(`Rent ${y}`, { exact: true })).toHaveValue("10800");
+    // The budget is only your inputs: annual amount (spread evenly) or ▸ each month; no actuals mixed in.
+    await expect(page.getByText(`${y} budget`, { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Rent annual", { exact: true })).toHaveValue("13200"); // 4 × 900 + 8 × 1,200
     await page.getByRole("button", { name: "Months for Rent" }).click();
-    await expect(page.getByLabel("Rent Nov", { exact: true })).toHaveValue("1200");
-    // Every month shows your plan (input); statement months also show the actual underneath
-    await expect(page.getByLabel("Rent Sep", { exact: true })).toHaveValue("1200");
-    await expect(page.getByText("actual $0").first()).toBeVisible();
-    // Take-home − spending = what's left to save + invest this year
-    await expect(page.getByText(/take-home − \$[\d,]+ spending = \$[\d,-]+ to save \+ invest in \d{4}/)).toBeVisible();
-    // A category you spend on without a budget row is offered with what you've spent on it so far
-    await expect(page.getByRole("button", { name: /\+ Transportation · \$[\d,]+ so far/ })).toBeVisible();
-    // Save / invest targets month by month
+    await expect(page.getByLabel("Rent Apr", { exact: true })).toHaveValue("900");
+    await expect(page.getByLabel("Rent May", { exact: true })).toHaveValue("1200");
+    await expect(page.getByText(/^actual \$/)).toHaveCount(0);
+    // Save / invest inputs: annual spreads evenly
+    await page.getByLabel("Save (cash) annual", { exact: true }).fill("1200");
+    await page.getByLabel("Invest annual", { exact: true }).fill("600");
     await page.getByRole("button", { name: "Months for Save (cash)" }).click();
-    await page.getByLabel("Save (cash) Nov", { exact: true }).fill("600");
-    await page.getByLabel("Save (cash) Dec", { exact: true }).fill("600");
-    await page.getByRole("button", { name: "Months for Invest" }).click();
-    await page.getByLabel("Invest Nov", { exact: true }).fill("300");
-    await page.getByLabel("Invest Dec", { exact: true }).fill("300");
+    await expect(page.getByLabel("Save (cash) Jan", { exact: true })).toHaveValue("100");
     await page.screenshot({ path: "test-results/finances.png", fullPage: true });
     await page.getByRole("button", { name: "Save & recalculate" }).click();
     await expect(page.getByText("All changes saved")).toBeVisible();

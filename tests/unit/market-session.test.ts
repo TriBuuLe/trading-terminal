@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifySession } from "@/lib/market-session";
-import { etToDate, etParts, formatCountdown } from "@/lib/time";
+import { etToDate, etParts, formatCountdown, tradingDayOf } from "@/lib/time";
 
 const day = { date: "2026-11-04", open: "09:30", close: "16:00", session_open: "0400", session_close: "2000" };
 const closedClock = { is_open: false, next_open: "2026-11-05T14:30:00Z", next_close: "2026-11-05T21:00:00Z" };
@@ -33,6 +33,11 @@ describe("market session", () => {
   it("closed overnight, weekends and holidays", () => {
     expect(classifySession(new Date("2026-11-05T02:00:00Z"), closedClock, day).session).toBe("closed"); // 21:00 ET
     expect(classifySession(new Date("2026-11-07T15:00:00Z"), closedClock, null).session).toBe("closed");
+  });
+
+  it("maps Alpaca daily windows (20:00 ET prior evening) to the session date", () => {
+    expect(tradingDayOf(1793754000)).toBe("2026-11-04"); // 2026-11-03 20:00 ET
+    expect(tradingDayOf(Date.parse("2026-11-04T05:00:00Z") / 1000)).toBe("2026-11-04"); // 00:00 ET
   });
 
   it("formats countdowns", () => {

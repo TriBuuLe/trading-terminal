@@ -178,7 +178,7 @@ export function TickerView() {
   const fillMarks = useMemo(() => fills.data ?? [], [fills.data]);
 
   return (
-    <div className="scrollbar-thin flex h-full min-h-0 flex-col overflow-auto">
+    <div className="@container scrollbar-thin flex h-full min-h-0 flex-col overflow-auto">
       <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-3 py-2">
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-xl font-semibold">{symbol}</span>
@@ -262,7 +262,7 @@ export function TickerView() {
         )}
       </div>
 
-      <div className="grid shrink-0 grid-cols-1 gap-2 p-3 xl:grid-cols-3">
+      <div className="grid shrink-0 grid-cols-1 gap-2 p-3 @4xl:grid-cols-3 @xl:grid-cols-2">
         <Box title="Key stats">
           {yearly.isError ? (
             <ErrorState error={yearly.error} compact />
@@ -314,7 +314,7 @@ export function TickerView() {
           </Box>
         ) : null}
 
-        <Box title={`News · ${symbol}`} className={cn(!f?.enabled && "xl:col-span-2")}>
+        <Box title={`News · ${symbol}`} className={cn(!f?.enabled && "@4xl:col-span-2")}>
           {news.isPending ? (
             <LoadingRows rows={4} className="p-0" />
           ) : news.isError ? (

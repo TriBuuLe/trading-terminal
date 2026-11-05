@@ -54,3 +54,12 @@ export function formatCountdown(ms: number): string {
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m ${String(sec).padStart(2, "0")}s`;
 }
+
+/**
+ * Trading day a daily window belongs to. Alpaca portfolio-history daily windows
+ * start at 20:00 ET the previous evening (e.g. 2026-11-03T20:00 ET = the Nov 4
+ * session); some sources use 00:00 ET. Shifting +6h maps both to the session date.
+ */
+export function tradingDayOf(unixSeconds: number): string {
+  return etParts(new Date((unixSeconds + 6 * 3600) * 1000)).date;
+}

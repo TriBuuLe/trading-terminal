@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { settings } from "@/db/schema";
 import type { AccountSummary, PositionRow } from "@/lib/types";
+import { tradingDayOf } from "@/lib/time";
 import { getAccount, getPortfolioHistory, getPositions } from "./alpaca/trading";
 
 export interface AccountStart {
@@ -40,7 +41,7 @@ export async function getAccountStart(accountNumber: string, currentEquity: stri
     const i = h.equity.findIndex((v) => v !== null && v > 0);
     if (i >= 0) {
       balance = new Decimal(h.equity[i]!).toFixed(2);
-      date = new Date(h.timestamp[i]! * 1000).toISOString().slice(0, 10);
+      date = tradingDayOf(h.timestamp[i]!);
     } else if (h.base_value) {
       balance = new Decimal(h.base_value).toFixed(2);
     }

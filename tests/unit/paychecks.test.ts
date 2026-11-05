@@ -14,13 +14,18 @@ describe("exact pay schedules", () => {
     expect(incomeInMonth([ibm], "2027-01")).toBe(0);
   });
 
-  it("from employment dates: first payday on/after the start; a partial first week is prorated by workdays", () => {
-    // Start Tue Sep 8: the Sep 11 paycheck covers Sat Sep 5 – Fri Sep 11, of which Tue–Fri (4 of 5 workdays) were worked → 1,325.47 × 4/5
+  it("from employment dates: first payday on/after the start; every paycheck is the per-paycheck amount", () => {
     const s: IncomeStream = { ...ibm, firstPayDate: null, lastPayDate: null, employmentStart: "2026-09-08" };
     expect(paychecks(s, "2026-09-01", "2026-09-18")).toEqual([
-      { date: "2026-09-11", amount: 1060.38 },
+      { date: "2026-09-11", amount: 1325.47 },
       { date: "2026-09-18", amount: 1325.47 },
     ]);
+  });
+  it("IBM: employed Aug 31 – Dec 18, first check Sep 11 → 16 weekly checks × $1,325.47 = $21,207.52", () => {
+    const s: IncomeStream = { ...ibm, firstPayDate: "2026-09-11", lastPayDate: null, employmentStart: "2026-08-31", employmentEnd: "2026-12-18" };
+    const c = paychecks(s, "2026-01-01", "2026-12-31");
+    expect(c).toHaveLength(16);
+    expect(c.reduce((t, x) => t + x.amount, 0)).toBeCloseTo(21207.52, 2);
   });
 
   it("biweekly skips every other week", () => {

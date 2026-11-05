@@ -7,7 +7,7 @@ import { useNow } from "@/hooks/use-now";
 import { api } from "@/lib/api";
 import { SPENDING_CATEGORIES, SPENDING_CATEGORY_NAMES, defaultKind } from "@/lib/planner/categories";
 import { matchPlanCategory } from "@/lib/planner/spending";
-import { addMonths, isActive, nextPaycheck, overrideWarning, paychecks, riskScore, round2 } from "@/lib/planner/core";
+import { addMonths, incomeInMonth, isActive, overrideWarning, paychecks, riskScore, round2 } from "@/lib/planner/core";
 import { proposeWants } from "@/lib/planner/propose";
 import { lineMatchesPattern, matchIncomeLine, WEEKDAYS, type PayPattern } from "@/lib/planner/paychecks";
 import { derivedTaxFacts, netIncome } from "@/lib/planner/net";
@@ -214,24 +214,22 @@ function scheduleText(i: Profile["incomes"][number]): string {
 }
 
 /** One income line: a summary row; ▸ opens the editor. */
-function IncomeLine({ i, year, p, pattern, got, coveredThrough, upd, remove, applyPattern }: {
+function IncomeLine({ i, year, p, pattern, upd, remove, applyPattern }: {
   i: Profile["incomes"][number];
   year: number;
   p: Profile;
   pattern: PayPattern | null;
-  got: { received: number; deposits: number; estimated: number; estimatedDates: string[]; flag: string | null } | null;
-  coveredThrough: string | null;
   upd: (patch: Partial<Profile["incomes"][number]>) => void;
   remove: () => void;
   applyPattern: (() => void) | null;
 }) {
   const [open, setOpen] = useState(!i.name || i.amount === 0);
+  // Total for the year = number of paychecks × per-paycheck amount (or the months it pays × the monthly amount)
   const checks = scheduled(i) ? paychecks(i, `${year}-01-01`, `${year}-12-31`) : [];
-  // Still expected = this line's paychecks / payments after your last statement (recomputed as you edit)
-  const ahead = aheadFor(i, coveredThrough, year);
-  const received = got?.received ?? 0;
-  const estimated = got?.estimated ?? 0;
-  const next = scheduled(i) ? nextPaycheck([i], new Date().toISOString().slice(0, 10)) : null;
+  const months = Array.from({ length: 12 }, (_, k) => `${year}-${String(k + 1).padStart(2, "0")}`);
+  const activeMonths = months.filter((m) => incomeInMonth([i], m) > 0).length;
+  const total = round2(months.reduce((t, m) => t + incomeInMonth([i], m), 0));
+  const count = scheduled(i) ? `${checks.length} × ${usd(checks[0]?.amount ?? i.amount)}` : i.frequency === "once" ? "once" : `${activeMonths} mo × ${usd(i.amount)}`;
   const date = (label: string, key: "employmentStart" | "employmentEnd" | "firstPayDate" | "lastPayDate") => (
     <Field label={label}>
       <input aria-label={label} type="date" className={inp} value={i[key] ?? ""} onChange={(e) => upd({ [key]: e.target.value || null })} />
@@ -240,7 +238,7 @@ function IncomeLine({ i, year, p, pattern, got, coveredThrough, upd, remove, app
   const days = i.workdays?.length ? i.workdays : [1, 2, 3, 4, 5];
   return (
     <div className="border-t border-border/50 first:border-t-0">
-      <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] items-center gap-2 py-1.5 text-xs">
+      <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_minmax(8rem,1fr)_7rem_4.5rem] items-center gap-2 py-1.5 text-xs">
         <button type="button" aria-expanded={open} aria-label={`Edit ${i.name}`} onClick={() => setOpen(!open)} className="text-muted-foreground hover:text-foreground">
           {open ? "▾" : "▸"}
         </button>
@@ -252,13 +250,10 @@ function IncomeLine({ i, year, p, pattern, got, coveredThrough, upd, remove, app
           {scheduleText(i)}
           {i.basis === "gross" && <span className="text-muted-foreground"> pre-tax</span>}
         </span>
-        <span className="num text-right" title={got?.deposits ? `${got.deposits} deposits` : undefined}>
-          {received ? usd(received) : "—"}
+        <span className="num text-right text-muted-foreground" title={checks.length ? `${checks[0]!.date} → ${checks.at(-1)!.date}` : undefined}>
+          {count}
         </span>
-        <span className="num text-right" title={ahead.count ? `${ahead.count} after ${coveredThrough ?? "today"}` : undefined}>
-          {ahead.amount ? usd(ahead.amount) : "—"}
-        </span>
-        <span className="num text-right font-medium">{usd(received + estimated + ahead.amount)}</span>
+        <span className="num text-right font-medium">{usd(total)}</span>
         <span className="flex items-center justify-end gap-1.5 text-[10px]">
           {applyPattern && (
             <button type="button" className="rounded border border-series-1/40 px-1 text-series-1 hover:bg-series-1/10" onClick={applyPattern} title={`${pattern!.employer}: ${usd(pattern!.amount)} ${pattern!.frequency}, ${pattern!.count} deposits ${pattern!.first} → ${pattern!.last}`}>
@@ -267,18 +262,6 @@ function IncomeLine({ i, year, p, pattern, got, coveredThrough, upd, remove, app
           )}
         </span>
       </div>
-      {got?.flag && <p className="-mt-1 pb-1 pl-6 text-[10px] text-amber-300">{got.flag}</p>}
-      {estimated > 0 && (
-        <p className="num -mt-1 pb-1 pl-6 text-[10px] text-amber-300">
-          + {usd(estimated)} estimated: {got!.estimatedDates.map(shortDate).join(", ")} paychecks aren&apos;t in your statements (import them to replace the estimate)
-        </p>
-      )}
-      {!got?.flag && next && !open && (
-        <p className="num -mt-1 pb-1 pl-6 text-[10px] text-muted-foreground">
-          next expected {shortDate(next.date)} · {usd(next.amount)}
-          {checks.length > 0 && <> · {year}: {checks.length} paychecks {shortDate(checks[0]!.date)} → {shortDate(checks.at(-1)!.date)}</>}
-        </p>
-      )}
       {open && (
         <div className="mb-2 ml-6 space-y-2 rounded-md bg-background/60 p-2">
           <div className="flex flex-wrap items-end gap-2">
@@ -409,12 +392,6 @@ function IncomeLine({ i, year, p, pattern, got, coveredThrough, upd, remove, app
               </Field>
             </div>
           )}
-          {scheduled(i) && (
-            <p className="num text-[10px] text-muted-foreground">
-              {year}: {checks.length} paychecks · received {usd(received)} + still expected {usd(ahead.amount)}
-              {next && <> · next expected {shortDate(next.date)}, {usd(next.amount)}</>}
-            </p>
-          )}
         </div>
       )}
     </div>
@@ -428,16 +405,8 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
   const pays = useQuery({ queryKey: ["paychecks"], queryFn: () => api<PayPattern[]>("/api/finances/paychecks") });
   const yr = useQuery({ queryKey: ["year"], queryFn: () => api<{ income: YearIncome } | null>("/api/finances/year") });
   const inc = yr.data?.income ?? null;
-  const covered = inc?.coveredThrough ?? null;
-  // Saved lines: the server matched their deposits. New (unsaved) lines: use their employer's deposits so the row adds up before you save.
-  const gotFor = (id: string) => {
-    const saved = inc?.lines.find((l) => l.id === id);
-    if (saved && (saved.received > 0 || saved.flag)) return saved;
-    const employer = patternFor(id)?.employer;
-    const u = employer ? inc?.unlinked.find((x) => x.employer === employer) : undefined;
-    return u ? { received: u.received, deposits: u.deposits, estimated: 0, estimatedDates: [], flag: null } : (saved ?? null);
-  };
-  const aheadTotal = p.incomes.reduce((t, i) => t + aheadFor(i, covered, year).amount, 0);
+  const notSetUp = (pays.data ?? []).filter((x) => !matchIncomeLine(x, p.incomes)).reduce((t, x) => t + (inc?.unlinked.find((u) => u.employer === x.employer)?.received ?? 0), 0);
+  const incomeYearTotal = round2(net.byMonth.reduce((t, m) => t + m.amount, 0) + notSetUp);
   const patternFor = (id: string) => (pays.data ?? []).find((x) => matchIncomeLine(x, p.incomes)?.id === id) ?? null;
   const unmatched = (pays.data ?? []).filter((x) => !matchIncomeLine(x, p.incomes));
   const apply = (x: PayPattern, line: Profile["incomes"][number] | null) =>
@@ -455,13 +424,12 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
       onAdd={() => set((x) => ({ ...x, incomes: [...x.incomes, { id: uid(), name: "", amount: 0, frequency: "weekly", kind: "salary", basis: "net", payDay: 5, employmentStart: null, firstPayDate: null }] }))}
     >
       {p.incomes.length === 0 && unmatched.length === 0 && <p className="text-[11px] text-muted-foreground">No income yet.</p>}
-      <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] gap-2 pb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
+      <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_minmax(8rem,1fr)_7rem_4.5rem] gap-2 pb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
         <span />
         <span>Income</span>
         <span>Pay</span>
-        <span className="text-right" title="Deposits in your statements this year">Received</span>
-        <span className="text-right" title={covered ? `Paychecks after your last statement (${covered})` : "Paychecks still to come"}>Still expected</span>
-        <span className="text-right">{year}</span>
+        <span className="text-right">Paychecks</span>
+        <span className="text-right">{year} total</span>
         <span />
       </div>
       {p.incomes.map((i) => {
@@ -473,8 +441,6 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
             year={year}
             p={p}
             pattern={pt}
-            got={gotFor(i.id)}
-            coveredThrough={covered}
             upd={updAt(i.id)}
             remove={() => set((x) => ({ ...x, incomes: x.incomes.filter((y) => y.id !== i.id) }))}
             applyPattern={pt && !lineMatchesPattern(i, pt) ? () => apply(pt, i) : null}
@@ -484,7 +450,7 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
       {unmatched.map((x) => {
         const got = inc?.unlinked.find((u) => u.employer === x.employer);
         return (
-          <div key={x.employer} className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] items-center gap-2 border-t border-border/50 py-1.5 text-xs">
+          <div key={x.employer} className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_minmax(8rem,1fr)_7rem_4.5rem] items-center gap-2 border-t border-border/50 py-1.5 text-xs">
             <span />
             <span className="truncate font-medium">
               {x.employer}
@@ -493,10 +459,7 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
             <span className="num truncate">
               {usd(x.amount)} {x.frequency === "weekly" || x.frequency === "biweekly" ? `${x.frequency}, ${DAY_SHORT[x.payDay ?? 5]}` : x.frequency}
             </span>
-            <span className="num text-right" title={`${got?.deposits ?? x.count} payroll deposits`}>
-              {usd(got?.received ?? 0)}
-            </span>
-            <span className="num text-right">—</span>
+            <span className="num text-right text-muted-foreground">{got?.deposits ?? x.count} deposits</span>
             <span className="num text-right font-medium">{usd(got?.received ?? 0)}</span>
             <span className="flex justify-end">
               <button type="button" className="rounded border border-series-1/40 px-1 text-[10px] text-series-1 hover:bg-series-1/10" onClick={() => apply(x, null)} title="Add an income line from these deposits (you can edit it)">
@@ -514,16 +477,13 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
           ))}
         </ul>
       )}
-      {p.incomes.length > 0 && (
-        <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] items-baseline gap-2 border-t border-border pt-2 text-xs font-medium">
+      {(p.incomes.length > 0 || unmatched.length > 0) && (
+        <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_minmax(8rem,1fr)_7rem_4.5rem] items-baseline gap-2 border-t border-border pt-2 text-xs font-medium">
           <span />
           <span>{year} take-home</span>
-          <span className="text-[10px] font-normal text-muted-foreground">{covered ? `statements through ${shortDate(covered)}` : "no statements yet"}</span>
-          <span className="num text-right" title={inc?.estimated ? `+ ${usd(inc.estimated)} estimated for paychecks missing from your statements` : "Pay deposits only (Zelle, refunds and cash aren't income; see Analysis)"}>
-            {inc ? usd(inc.received + inc.estimated) : "—"}
-          </span>
-          <span className="num text-right">{usd(aheadTotal)}</span>
-          <span className="num text-right">{usd((inc?.received ?? 0) + (inc?.estimated ?? 0) + aheadTotal)}</span>
+          <span />
+          <span />
+          <span className="num text-right">{usd(incomeYearTotal)}</span>
           <span />
         </div>
       )}

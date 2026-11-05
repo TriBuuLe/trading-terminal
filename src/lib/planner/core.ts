@@ -79,15 +79,13 @@ export function paychecks(s: IncomeStream, from: string, to: string): { date: st
   const lo = utc(from);
   const hi = Math.min(last, utc(to));
   const days = s.workdays?.length ? s.workdays : [1, 2, 3, 4, 5];
-  // Paycheck dates you know (from deposits) are paid in full; prorating by employment
-  // dates is only for estimating checks you don't have yet.
-  const prorate = !s.firstPayDate && (s.employmentStart || s.employmentEnd);
+  // Salaried pay: every paycheck is the per-paycheck amount (no proration). Hourly: rate × hours × workdays worked.
   const out: { date: string; amount: number }[] = [];
   for (let t = first; t <= hi; t += sch.periodDays * dayMs) {
     if (t < lo) continue;
     const end = t - lag;
     const w = workdaysIn(s, end - (sch.periodDays - 1) * dayMs, end);
-    const amount = sch.hourly ? s.amount * ((s.hoursPerWeek ?? 40) / days.length) * w.worked : prorate ? s.amount * (w.all ? w.worked / w.all : 1) : s.amount;
+    const amount = sch.hourly ? s.amount * ((s.hoursPerWeek ?? 40) / days.length) * w.worked : s.amount;
     if (amount > 0) out.push({ date: iso(t), amount: round2(amount) });
   }
   return out;

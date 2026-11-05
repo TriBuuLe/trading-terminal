@@ -111,8 +111,25 @@ export const BROKERAGE = /fid bkg|fidelity|moneyline|schwab|vanguard|robinhood|w
  * purchases, so the payment is a transfer (counting both would double spending).
  * A positive amount at a store is a refund and goes back to that store's category.
  */
-export function suggestCategory(description: string, amount?: number): { category: string; confidence: "rule" | "none" } {
+/** Your own rules, saved with your profile: they win over the built-in ones. */
+export interface MyRules {
+  /** "anh trieu" → Rent: money OUT whose description (or merchant name) contains `match`. */
+  rules?: { match: string; category: string }[];
+  /** Category for money you send people (Zelle, Venmo...) when the memo doesn't say what it was. Default Other. */
+  peerOutCategory?: string;
+}
+
+export function ruleMatches(match: string, description: string): boolean {
+  const m = match.trim().toLowerCase();
+  return m.length > 0 && (description.toLowerCase().includes(m) || merchantName(description).toLowerCase() === m);
+}
+
+export function suggestCategory(description: string, amount?: number, mine: MyRules = {}): { category: string; confidence: "rule" | "none" } {
   if (CARD_PAYMENT.test(description)) return { category: "Transfers", confidence: "rule" };
+  if (amount === undefined || amount < 0) {
+    const r = mine.rules?.find((x) => ruleMatches(x.match, description));
+    if (r) return { category: r.category, confidence: "rule" };
+  }
   // Cash: an ATM deposit is money in; a withdrawal is spending you can't see the details of.
   if (amount !== undefined && /\batm\b/i.test(description)) return { category: amount > 0 ? "Income" : "Other", confidence: "rule" };
   if (BROKERAGE.test(description)) return { category: "Transfers", confidence: "rule" };
@@ -122,7 +139,9 @@ export function suggestCategory(description: string, amount?: number): { categor
     if (amount > 0) return { category: "Income", confidence: "rule" };
     const memo = / for (.+)$/i.exec(description)?.[1] ?? "";
     const fromMemo = memo ? CATEGORY_RULES.find(([cat, re]) => cat !== "Income" && cat !== "Transfers" && re.test(memo))?.[0] : undefined;
-    return { category: fromMemo ?? "Other", confidence: "rule" };
+    // Your "money sent to people" choice is for person-to-person apps; remittance services (Remitly...) stay Other.
+    const remittance = /remitly|rmtly|western union|\bwise\b/i.test(description);
+    return { category: fromMemo ?? (remittance ? "Other" : (mine.peerOutCategory ?? "Other")), confidence: "rule" };
   }
   const spending = CATEGORY_RULES.find(([cat, re]) => cat !== "Income" && cat !== "Transfers" && re.test(description))?.[0];
   if (amount !== undefined && amount > 0) return { category: spending ?? "Income", confidence: "rule" };
@@ -136,10 +155,10 @@ export function suggestCategory(description: string, amount?: number): { categor
  * Flip signs on a preview (credit-card statements) and re-suggest categories that
  * were automatic, since the sign changes what a row is. Categories you picked stay.
  */
-export function flipPreview(rows: ParsedTx[]): ParsedTx[] {
+export function flipPreview(rows: ParsedTx[], mine: MyRules = {}): ParsedTx[] {
   return rows.map((r) => {
     const amount = -r.amount;
-    return r.category === suggestCategory(r.description, r.amount).category ? { ...r, amount, ...suggestCategory(r.description, amount) } : { ...r, amount };
+    return r.category === suggestCategory(r.description, r.amount, mine).category ? { ...r, amount, ...suggestCategory(r.description, amount, mine) } : { ...r, amount };
   });
 }
 
@@ -163,7 +182,7 @@ export function looksLikeCardStatement(rows: ParsedTx[], hasDebitCreditColumns: 
 /** Flip signs so money out is negative (use for credit-card statements). */
 export const flipSigns = <T extends { amount: number }>(rows: T[]): T[] => rows.map((r) => ({ ...r, amount: -r.amount }));
 
-export function importCsv(text: string): { rows: ParsedTx[]; skipped: number; columns: Record<string, number>; looksLikeCard: boolean } {
+export function importCsv(text: string, mine: MyRules = {}): { rows: ParsedTx[]; skipped: number; columns: Record<string, number>; looksLikeCard: boolean } {
   const grid = parseCsv(text);
   if (grid.length < 2) return { rows: [], skipped: 0, columns: {}, looksLikeCard: false };
   // Some banks (e.g. Bank of America) put a summary block above the real header: use the first row that has the columns.
@@ -199,7 +218,36 @@ export function importCsv(text: string): { rows: ParsedTx[]; skipped: number; co
       skipped++;
       continue;
     }
-    rows.push({ date, description: desc, amount: Math.round(amount * 100) / 100, ...suggestCategory(desc, amount) });
+    rows.push({ date, description: desc, amount: Math.round(amount * 100) / 100, ...suggestCategory(desc, amount, mine) });
   }
   return { rows, skipped, columns: cols, looksLikeCard: looksLikeCardStatement(rows, cols.debit >= 0 || cols.credit >= 0) };
+}
+
+const GENERIC = new Set(["the", "st", "sq", "tst", "aplpay", "pos", "debit", "purchase", "online", "www"]);
+const titleCase = (w: string) => w.toLowerCase().replace(/(^|[\s\-./])\w/g, (c) => c.toUpperCase());
+
+/** A readable merchant name to group by: "AplPay PUBLIX BOCA RATON FL" → "Publix", "Zelle payment to Akshit Kurani for July Rent" → "Zelle to Akshit Kurani". */
+export function merchantName(description: string): string {
+  const d = description.trim();
+  const zelle = /zelle payment (to|from) ([a-z][a-z .'-]*?)(?: for |;| conf|$)/i.exec(d);
+  if (zelle) return `Zelle ${zelle[1]!.toLowerCase()} ${titleCase(zelle[2]!.trim())}`;
+  if (/rmtly|remitly/i.test(d)) return "Remitly";
+  if (/apple\.?com|apple com bill/i.test(d)) return "Apple";
+  if (/\buber\b.*eats|uber \*?eats/i.test(d)) return "Uber Eats";
+  if (/\buber\b/i.test(d)) return "Uber";
+  if (/wire (type|out)|wire out/i.test(d)) return "Wire transfer";
+  if (/international transaction fee|foreign transaction fee/i.test(d)) return "Foreign transaction fees";
+  const head = d
+    .replace(/^((aplpay|sq ?\*|tst ?[*-]|pp\*|paypal ?\*)\s*)+/i, "")
+    .split(/ DES:| ID:| PURCHASE|#| \d{2}\/\d{2}|\*|,/i)[0]!
+    // "IBMBLDG500CAFDURHAM NC": keep the letters before the digits of the first word ("IBMBLDG")
+    .replace(/^([a-z]{3,})\d\S*/i, "$1")
+    .replace(/\S*\d\S*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = head.split(" ").filter((w) => w && !GENERIC.has(w.toLowerCase().replace(/[^a-z]/g, "")));
+  if (!words.length) return titleCase(d.slice(0, 24));
+  // One distinctive word is usually the brand (PUBLIX, TARGET, AMAZON); short first words need the second (BEST BUY, LA FITNESS).
+  const name = words[0]!.replace(/[^a-z]/gi, "").length >= 6 ? words[0]! : words.slice(0, 2).join(" ");
+  return titleCase(name.replace(/[,;:]+$/, ""));
 }

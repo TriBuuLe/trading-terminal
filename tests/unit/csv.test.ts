@@ -173,3 +173,16 @@ describe("checking-account details", () => {
     expect(sc("TOMMY HILFIGER CHARLOTTE NC", -60).category).toBe("Shopping");
   });
 });
+
+describe("your own rules", () => {
+  const mine = { rules: [{ match: "anh trieu", category: "Rent" }], peerOutCategory: "Entertainment" };
+  it("a payee rule wins; other money sent to people uses your choice; a memo still says what it was", () => {
+    expect(sc("Zelle payment to Anh Trieu", -650, mine).category).toBe("Rent");
+    expect(sc("Zelle payment to Maxwell Huang", -18, mine).category).toBe("Entertainment");
+    expect(sc("Zelle payment to Akshit Kurani for July Rent;", -1052, mine).category).toBe("Rent");
+    expect(sc("REMITLY INC DES:REMITTANCE", -201.99, mine).category).toBe("Other"); // remittance service, not a person-to-person app
+  });
+  it("money in is not affected by rules", () => {
+    expect(sc("Zelle payment from Anh Trieu", 650, mine).category).toBe("Income");
+  });
+});

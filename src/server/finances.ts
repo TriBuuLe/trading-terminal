@@ -7,7 +7,7 @@ import { addMonths } from "@/lib/planner/core";
 import { buildPlan, type Plan } from "@/lib/planner/plan";
 import { analyzeSpending, type SpendingAnalysis } from "@/lib/planner/spending";
 import { yearSummary, type YearSummary } from "@/lib/planner/summary";
-import { suggestCategory } from "@/lib/planner/csv";
+import { suggestCategory, type MyRules } from "@/lib/planner/csv";
 import { assumptionsSchema, profileSchema } from "@/lib/planner/schema";
 import type { Assumptions, Profile } from "@/lib/planner/types";
 import { etParts } from "@/lib/time";
@@ -201,12 +201,13 @@ export async function addTransactions(rows: Omit<StoredTx, "id">[]): Promise<{ s
 export async function flipMonth(month: string): Promise<number> {
   const k = key();
   const rows = await listTransactions(month);
+  const mine = await myRules();
   await db().transaction(async (tx) => {
     for (const t of rows) {
       const { id, ...rest } = t;
       // Re-suggest the category if it was the automatic one: flipping the sign changes what the row is.
-      const auto = rest.category === suggestCategory(rest.description, rest.amount).category;
-      const category = auto ? suggestCategory(rest.description, -rest.amount).category : rest.category;
+      const auto = rest.category === suggestCategory(rest.description, rest.amount, mine).category;
+      const category = auto ? suggestCategory(rest.description, -rest.amount, mine).category : rest.category;
       await tx.update(finTransactions).set({ ciphertext: encryptJson({ ...rest, amount: -rest.amount, category }, `fin:tx:${id}`, k) }).where(eq(finTransactions.id, id));
     }
   });
@@ -241,10 +242,17 @@ export async function updateTransactionCategory(id: number, category: string): P
   await db().update(finTransactions).set({ ciphertext: encryptJson({ ...tx, category }, `fin:tx:${id}`, k) }).where(eq(finTransactions.id, id));
 }
 
+/** Your saved category rules (part of the encrypted profile). */
+export async function myRules(): Promise<MyRules> {
+  const p = await getProfile();
+  return { rules: p?.categoryRules ?? [], peerOutCategory: p?.peerOutCategory };
+}
+
 /** Transactions whose automatic category under the CURRENT rules differs from the saved one (e.g. after a new category is added). */
 export async function recategorizePreview(): Promise<{ id: number; date: string; description: string; amount: number; from: string; to: string }[]> {
+  const mine = await myRules();
   return (await listTransactions()).flatMap((t) => {
-    const s = suggestCategory(t.description, t.amount);
+    const s = suggestCategory(t.description, t.amount, mine);
     return s.confidence === "rule" && s.category !== t.category ? [{ id: t.id, date: t.date, description: t.description, amount: t.amount, from: t.category, to: s.category }] : [];
   });
 }

@@ -7,7 +7,9 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 import { TRANSACTION_CATEGORIES } from "@/lib/planner/categories";
-import { flipPreview, type ParsedTx } from "@/lib/planner/csv";
+import { flipPreview, merchantName, type ParsedTx } from "@/lib/planner/csv";
+import { SPENDING_CATEGORY_NAMES } from "@/lib/planner/categories";
+import type { Profile } from "@/lib/planner/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows, Tag } from "../terminal/bits";
@@ -138,6 +140,7 @@ export function Transactions() {
         </section>
       )}
 
+      <MyRulesSection onChange={refresh} />
       {(months.data?.length ?? 0) > 0 && <Recategorize onDone={refresh} />}
 
       <section className="rounded-md border border-border bg-background/40 p-3">
@@ -193,7 +196,14 @@ export function Transactions() {
                       value={t.category}
                       onChange={(c) =>
                         void api("/api/finances/transactions", { method: "PATCH", body: { id: t.id, category: c } })
-                          .then(refresh)
+                          .then(async () => {
+                            await refresh();
+                            const who = merchantName(t.description);
+                            if (t.amount < 0)
+                              toast.success(`Saved as ${c}`, {
+                                action: { label: `Always ${c} for “${who}”`, onClick: () => void addRule(who, c, refresh) },
+                              });
+                          })
                           .catch((e: Error) => toast.error(e.message))
                       }
                     />
@@ -296,6 +306,77 @@ function Recategorize({ onDone }: { onDone: () => Promise<unknown> }) {
           </table>
         </div>
       )}
+    </section>
+  );
+}
+
+function addRule(match: string, category: string, after: () => Promise<unknown>) {
+  return api("/api/finances/profile", { method: "PATCH", body: { addRule: { match, category } } })
+    .then(after)
+    .then(() => toast.success(`Rule saved: “${match}” → ${category}. New imports use it; Re-check applies it to saved ones.`))
+    .catch((e: Error) => toast.error(e.message));
+}
+
+/** Your own category rules: they win over the built-in ones, for new imports and Re-check. */
+function MyRulesSection({ onChange }: { onChange: () => Promise<unknown> }) {
+  const qc = useQueryClient();
+  const profile = useQuery({ queryKey: ["profile"], queryFn: () => api<{ profile: Profile | null }>("/api/finances/profile") });
+  const [match, setMatch] = useState("");
+  const [cat, setCat] = useState("Rent");
+  const p = profile.data?.profile;
+  if (!p) return null;
+  const after = () => Promise.all([qc.invalidateQueries({ queryKey: ["profile"] }), onChange()]);
+  const patch = (body: Record<string, unknown>) =>
+    api("/api/finances/profile", { method: "PATCH", body })
+      .then(after)
+      .catch((e: Error) => toast.error(e.message));
+  const rules = p.categoryRules ?? [];
+  return (
+    <section className="rounded-md border border-border bg-background/40 p-3 text-xs">
+      <h3 className="text-xs font-semibold">Your category rules</h3>
+      <p className="mb-2 text-[11px] text-muted-foreground">They win over the automatic ones, for new imports and for Re-check. Only money out (spending) is affected; money in stays Income.</p>
+      <label className="mb-2 flex flex-wrap items-center gap-2">
+        <span>Money you send people (Zelle, Venmo…) counts as</span>
+        <select
+          aria-label="Money sent to people counts as"
+          className="h-6 rounded border border-input bg-background px-1 text-[11px]"
+          value={p.peerOutCategory ?? "Other"}
+          onChange={(e) => void patch({ peerOutCategory: e.target.value })}
+        >
+          {SPENDING_CATEGORY_NAMES.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+        <span className="text-[10px] text-muted-foreground">unless its note says what it was (“for July Rent” = Rent) or a rule below matches.</span>
+      </label>
+      {rules.length > 0 && (
+        <ul className="mb-2 space-y-0.5">
+          {rules.map((r) => (
+            <li key={r.match} className="flex items-center gap-2">
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{r.match}</span>→<span>{r.category}</span>
+              <button type="button" className="text-[10px] text-down hover:underline" onClick={() => void patch({ removeRule: r.match })}>
+                remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (match.trim().length < 2) return;
+          void addRule(match.trim(), cat, after).then(() => setMatch(""));
+        }}
+      >
+        <span className="text-muted-foreground">Description contains</span>
+        <input aria-label="Rule text" value={match} onChange={(e) => setMatch(e.target.value)} placeholder="e.g. anh trieu" className="h-6 w-40 rounded border border-input bg-background px-1.5 text-[11px]" />
+        <span className="text-muted-foreground">→</span>
+        <CategorySelect value={cat} onChange={setCat} />
+        <Button size="sm" variant="outline" type="submit" disabled={match.trim().length < 2}>
+          Add rule
+        </Button>
+      </form>
     </section>
   );
 }

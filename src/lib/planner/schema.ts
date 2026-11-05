@@ -83,6 +83,8 @@ export const profileSchema = z.object({
   autoRoll: z.object({ enabled: z.boolean(), cashAccountId: z.string().min(1).max(40), lastRolledMonth: ym }).optional(),
   budgetBasis: z.enum(["planned", "actual"]).optional(),
   categoryMap: z.record(z.string().max(40), z.string().max(40)).optional(),
+  categoryRules: z.array(z.object({ match: z.string().trim().min(2).max(60), category: z.string().trim().min(1).max(40) })).max(200).optional(),
+  peerOutCategory: z.string().trim().min(1).max(40).optional(),
 });
 
 /** Problems that would make the plan silently wrong (shown in the editor, enforced on save). */

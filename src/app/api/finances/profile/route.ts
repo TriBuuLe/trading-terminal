@@ -19,6 +19,10 @@ const patchSchema = z.object({
   budgetBasis: z.enum(["planned", "actual"]).optional(),
   /** Set one mapping: transaction category → budget line ("" = don't map, null = remove the mapping). */
   mapCategory: z.object({ from: z.string().trim().min(1).max(40), to: z.string().max(40).nullable() }).optional(),
+  /** Your category rules: add/replace one (same match), remove one, or set what money sent to people counts as. */
+  addRule: z.object({ match: z.string().trim().min(2).max(60), category: z.string().trim().min(1).max(40) }).optional(),
+  removeRule: z.string().trim().min(1).max(60).optional(),
+  peerOutCategory: z.string().trim().min(1).max(40).optional(),
 });
 
 export const PATCH = route(async (req) => {
@@ -33,6 +37,12 @@ export const PATCH = route(async (req) => {
     else map[b.mapCategory.from] = b.mapCategory.to;
     next.categoryMap = map;
   }
+  if (b.addRule) {
+    const m = b.addRule.match.toLowerCase();
+    next.categoryRules = [{ match: m, category: b.addRule.category }, ...(p.categoryRules ?? []).filter((r) => r.match !== m)];
+  }
+  if (b.removeRule) next.categoryRules = (next.categoryRules ?? []).filter((r) => r.match !== b.removeRule!.toLowerCase());
+  if (b.peerOutCategory) next.peerOutCategory = b.peerOutCategory;
   await saveProfile(next);
   return Response.json({ ok: true });
 });

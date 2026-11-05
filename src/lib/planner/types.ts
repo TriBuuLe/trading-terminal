@@ -107,6 +107,9 @@ export interface Profile {
   budgetBasis?: "planned" | "actual";
   /** Transaction category → budget line (empty string = don't map). */
   categoryMap?: Record<string, string>;
+  /** Your own category rules for transactions (see MyRules in csv.ts). */
+  categoryRules?: { match: string; category: string }[];
+  peerOutCategory?: string;
   /** Monthly automatic balance updates (income in, spending and debt payments out). */
   autoRoll?: { enabled: boolean; cashAccountId: string; lastRolledMonth: YearMonth };
 }

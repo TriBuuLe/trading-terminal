@@ -1,5 +1,7 @@
 import { expenseInMonth, round2 } from "./core";
-import { PEER_PAYMENT } from "./csv";
+import { merchantName, PEER_PAYMENT } from "./csv";
+
+export { merchantName };
 import { netIncome } from "./net";
 import { matchPlanCategory } from "./spending";
 import type { Profile, YearMonth } from "./types";
@@ -93,35 +95,6 @@ export interface YearSummary {
   topMerchants: Merchant[];
   attention: Attention[];
   dataChecks: string[];
-}
-
-const GENERIC = new Set(["the", "st", "sq", "tst", "aplpay", "pos", "debit", "purchase", "online", "www"]);
-const title = (w: string) => w.toLowerCase().replace(/(^|[\s\-./])\w/g, (c) => c.toUpperCase());
-
-/** A readable merchant name to group by: "AplPay PUBLIX BOCA RATON FL" → "Publix", "Zelle payment to Akshit Kurani for July Rent" → "Zelle to Akshit Kurani". */
-export function merchantName(description: string): string {
-  const d = description.trim();
-  const zelle = /zelle payment (to|from) ([a-z][a-z .'-]*?)(?: for |;| conf|$)/i.exec(d);
-  if (zelle) return `Zelle ${zelle[1]!.toLowerCase()} ${title(zelle[2]!.trim())}`;
-  if (/rmtly|remitly/i.test(d)) return "Remitly";
-  if (/apple\.?com|apple com bill/i.test(d)) return "Apple";
-  if (/\buber\b.*eats|uber \*?eats/i.test(d)) return "Uber Eats";
-  if (/\buber\b/i.test(d)) return "Uber";
-  if (/wire (type|out)|wire out/i.test(d)) return "Wire transfer";
-  if (/international transaction fee|foreign transaction fee/i.test(d)) return "Foreign transaction fees";
-  const head = d
-    .replace(/^((aplpay|sq ?\*|tst ?[*-]|pp\*|paypal ?\*)\s*)+/i, "")
-    .split(/ DES:| ID:| PURCHASE|#| \d{2}\/\d{2}|\*|,/i)[0]!
-    // "IBMBLDG500CAFDURHAM NC": keep the letters before the digits of the first word ("IBMBLDG")
-    .replace(/^([a-z]{3,})\d\S*/i, "$1")
-    .replace(/\S*\d\S*/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const words = head.split(" ").filter((w) => w && !GENERIC.has(w.toLowerCase().replace(/[^a-z]/g, "")));
-  if (!words.length) return title(d.slice(0, 24));
-  // One distinctive word is usually the brand (PUBLIX, TARGET, AMAZON); short first words need the second (BEST BUY, LA FITNESS).
-  const name = words[0]!.replace(/[^a-z]/gi, "").length >= 6 ? words[0]! : words.slice(0, 2).join(" ");
-  return title(name.replace(/[,;:]+$/, ""));
 }
 
 function groupMerchants(tx: SummaryTx[]): Merchant[] {

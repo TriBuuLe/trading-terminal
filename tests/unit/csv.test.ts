@@ -17,6 +17,9 @@ describe("CSV import", () => {
     expect(suggestCategory("NETFLIX.COM").category).toBe("Subscriptions");
     expect(suggestCategory("XYZ LLC").confidence).toBe("none");
     for (const d of ["EXPEDIA 72384923", "AIR CANADA 0142", "MARRIOTT CHARLOTTE", "AIRBNB * HM4X", "DELTA AIR LINES ATLANTA", "HERTZ RENT-A-CAR"]) expect(suggestCategory(d).category, d).toBe("Travel");
+    // words hiding inside other words aren't travel
+    expect(suggestCategory("AplPay SHOPPERS DRUGHAMILTON").category).toBe("Health");
+    expect(suggestCategory("TEXACO 0386519/CHEVRBOCA RATON FL").category).toBe("Transportation");
     // still commuting / car, not travel
     expect(suggestCategory("UBER TRIP").category).toBe("Transportation");
     expect(suggestCategory("SHELL OIL 5741").category).toBe("Transportation");
@@ -31,7 +34,7 @@ describe("CSV import", () => {
     const b = importCsv('Transaction Date,Merchant,Debit,Credit\n2026-10-05,"SHELL OIL",45.10,\n2026-10-06,E-TRANSFER FROM MOM,,200\n');
     expect(b.rows.map((r) => [r.amount, r.category])).toEqual([
       [-45.1, "Transportation"],
-      [200, "Transfers"],
+      [200, "Income"], // money in
     ]);
   });
   it("explains a missing header", () => {
@@ -39,7 +42,7 @@ describe("CSV import", () => {
   });
 });
 
-import { flipSigns, looksLikeCardStatement } from "@/lib/planner/csv";
+import { flipPreview, looksLikeCardStatement, suggestCategory as sc } from "@/lib/planner/csv";
 
 describe("credit-card statements", () => {
   // Shaped like an Amex export: purchases positive, the payment negative.
@@ -68,7 +71,9 @@ describe("credit-card statements", () => {
     });
   });
   it("flipping makes purchases money OUT and the payment a (positive) transfer in", () => {
-    const rows = flipSigns(importCsv(amex).rows);
+    const rows = flipPreview(importCsv(amex).rows);
+    expect(rows.find((x) => x.description.includes("TAQUERIA"))!.category).toBe("Dining out");
+    expect(rows.find((x) => x.description.includes("MOBILE PAYMENT"))!.category).toBe("Transfers");
     expect(rows.find((x) => x.description.includes("TAQUERIA"))!.amount).toBe(-17.36);
     expect(rows.find((x) => x.description.includes("MOBILE PAYMENT"))!.amount).toBe(510.7);
   });
@@ -115,11 +120,11 @@ describe("Bank of America checking export (summary block above the header)", () 
   it("sorts checking-account rows (card payments and brokerage moves are transfers)", () => {
     expect(r.rows.map((x) => x.category)).toEqual([
       "Income",
-      "Transfers", // Zelle
+      "Other", // Zelle out: money out is spending
       "Rent", // APTS
       "Transfers", // Amex ACH payment: the card's own statement has the purchases
       "Health", // LA Fitness
-      "Transfers", // Fidelity MoneyLine
+      "Income", // Fidelity MoneyLine in: money in
       "Transfers", // payment to card 5590
       "Transportation",
       "Dining out",
@@ -129,5 +134,25 @@ describe("Bank of America checking export (summary block above the header)", () 
       "Subscriptions", // Uber One
       "Dining out", // Uber Eats
     ]);
+  });
+});
+
+describe("sign decides: money out = spending, money in = income", () => {
+  it("peer payments", () => {
+    expect(sc("Zelle payment to Alex Kim", -41.85).category).toBe("Other");
+    expect(sc("Zelle payment from Alex Kim", 20).category).toBe("Income");
+    expect(sc("RMTLY* B2044 PMNT SENT SEATTLE WA", -201.99).category).toBe("Other");
+  });
+  it("a positive amount at a store is a refund in that category; unknown money in is income", () => {
+    expect(sc("AMAZON.COM RETURN", 25).category).toBe("Shopping");
+    expect(sc("SOME DEPOSIT XYZ", 300).category).toBe("Income");
+  });
+  it("card payments stay transfers either way", () => {
+    expect(sc("AMERICAN EXPRESS DES:ACH PMT ID:M0006", -310.67).category).toBe("Transfers");
+    expect(sc("MOBILE PAYMENT - THANK YOU", 510.7).category).toBe("Transfers");
+  });
+  it("an unknown card purchase listed as positive becomes Uncategorized spending after flipping, not income", () => {
+    const [r] = flipPreview([{ date: "2026-10-01", description: "XYZ LLC", amount: 12, ...sc("XYZ LLC", 12) }]);
+    expect(r).toMatchObject({ amount: -12, category: "Uncategorized" });
   });
 });

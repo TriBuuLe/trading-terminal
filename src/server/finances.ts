@@ -201,7 +201,10 @@ export async function flipMonth(month: string): Promise<number> {
   await db().transaction(async (tx) => {
     for (const t of rows) {
       const { id, ...rest } = t;
-      await tx.update(finTransactions).set({ ciphertext: encryptJson({ ...rest, amount: -rest.amount }, `fin:tx:${id}`, k) }).where(eq(finTransactions.id, id));
+      // Re-suggest the category if it was the automatic one: flipping the sign changes what the row is.
+      const auto = rest.category === suggestCategory(rest.description, rest.amount).category;
+      const category = auto ? suggestCategory(rest.description, -rest.amount).category : rest.category;
+      await tx.update(finTransactions).set({ ciphertext: encryptJson({ ...rest, amount: -rest.amount, category }, `fin:tx:${id}`, k) }).where(eq(finTransactions.id, id));
     }
   });
   return rows.length;
@@ -238,7 +241,7 @@ export async function updateTransactionCategory(id: number, category: string): P
 /** Transactions whose automatic category under the CURRENT rules differs from the saved one (e.g. after a new category is added). */
 export async function recategorizePreview(): Promise<{ id: number; date: string; description: string; amount: number; from: string; to: string }[]> {
   return (await listTransactions()).flatMap((t) => {
-    const s = suggestCategory(t.description);
+    const s = suggestCategory(t.description, t.amount);
     return s.confidence === "rule" && s.category !== t.category ? [{ id: t.id, date: t.date, description: t.description, amount: t.amount, from: t.category, to: s.category }] : [];
   });
 }

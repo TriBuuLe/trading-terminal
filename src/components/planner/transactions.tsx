@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 import { TRANSACTION_CATEGORIES } from "@/lib/planner/categories";
-import { flipSigns, type ParsedTx } from "@/lib/planner/csv";
+import { flipPreview, type ParsedTx } from "@/lib/planner/csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows, Tag } from "../terminal/bits";
@@ -50,7 +50,7 @@ export function Transactions() {
       qc.invalidateQueries({ queryKey: ["plan"] }),
       qc.invalidateQueries({ queryKey: ["summary"] }),
     ]);
-  const shown = preview ? (cardMode ? flipSigns(preview.rows) : preview.rows) : [];
+  const shown = preview ? (cardMode ? flipPreview(preview.rows) : preview.rows) : [];
 
   const upload = async (file: File) => {
     if (file.size > 5_000_000) return toast.error("File too large (5 MB max)");

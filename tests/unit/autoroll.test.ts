@@ -25,6 +25,9 @@ describe("monthly auto-update", () => {
   it("uses imported transactions for that month when available", () => {
     const { entry } = rollMonth(base, "2026-11", { income: 3900, spending: 1450 });
     expect(entry).toMatchObject({ source: "actual", income: 3900, spending: 1450, cashAfter: 1500 + 3900 - 1450 - 100 });
+    // Only a credit card imported (no paycheck in the data): take-home from the plan (4,000) + the card's refunds/credits (25)
+    const card = rollMonth(base, "2026-11", { income: 25, spending: 1450, hasPaycheck: false }).entry;
+    expect(card).toMatchObject({ source: "actual", income: 4025, spending: 1450 });
   });
 
   it("only rolls months that have ENDED, and each month once (idempotent)", () => {

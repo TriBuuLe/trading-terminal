@@ -50,6 +50,8 @@ export async function applyAutoRoll(): Promise<RollEntry[]> {
       const t = decryptJson<Omit<StoredTx, "id">>(r.ciphertext, `fin:tx:${r.id}`, k);
       if (t.category === "Transfers") continue;
       const m = byMonth.get(r.month) ?? { income: 0, spending: 0 };
+      if (t.category === "Income") m.hasPaycheck = true;
+      else m.hasPaycheck ??= false;
       if (t.amount > 0) m.income += t.amount;
       else m.spending += -t.amount;
       byMonth.set(r.month, m);

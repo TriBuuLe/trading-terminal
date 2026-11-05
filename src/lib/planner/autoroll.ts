@@ -20,6 +20,8 @@ export interface AutoRoll {
 export interface MonthActuals {
   income: number; // money in (positive transactions, excl. transfers)
   spending: number; // money out (excl. transfers)
+  /** A paycheck (category Income) is among them. If not (only a credit card imported), take-home comes from the plan. */
+  hasPaycheck?: boolean;
 }
 
 export interface RollEntry {
@@ -43,7 +45,8 @@ export function rollMonth(p: Profile, month: YearMonth, actual?: MonthActuals | 
   const ar = p.autoRoll!;
   const plannedIncome = netIncome(p, month, 1).byMonth[0]!.amount;
   const plannedSpending = expenseInMonth(p.expenses, month);
-  const income = actual ? actual.income : plannedIncome;
+  // Only a card imported for this month? Its refunds aren't your pay: use the plan's take-home plus them.
+  const income = actual ? (actual.hasPaycheck === false ? plannedIncome + actual.income : actual.income) : plannedIncome;
   const spending = actual ? actual.spending : plannedSpending;
 
   let paid = 0;

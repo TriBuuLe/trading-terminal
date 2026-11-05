@@ -61,6 +61,7 @@ const SYNONYMS: Record<string, string[]> = {
   groceries: ["food", "grocery"],
   health: ["medical", "pharmacy", "health and fitness"],
   rent: ["housing", "rent and housing", "mortgage"],
+  travel: ["trips", "vacation", "vacations", "holidays", "flights", "hotels"],
 };
 
 export function matchPlanCategory(actual: string, plan: string[], userMap: Record<string, string> = {}): string | null {

@@ -7,6 +7,7 @@ import { addMonths } from "@/lib/planner/core";
 import { buildPlan, type Plan } from "@/lib/planner/plan";
 import { analyzeSpending, type SpendingAnalysis } from "@/lib/planner/spending";
 import { yearSummary, type YearSummary } from "@/lib/planner/summary";
+import { suggestCategory } from "@/lib/planner/csv";
 import { assumptionsSchema, profileSchema } from "@/lib/planner/schema";
 import type { Assumptions, Profile } from "@/lib/planner/types";
 import { etParts } from "@/lib/time";
@@ -232,6 +233,30 @@ export async function updateTransactionCategory(id: number, category: string): P
   if (!row) throw new Error("transaction not found");
   const tx = decryptJson<Omit<StoredTx, "id">>(row.ciphertext, `fin:tx:${id}`, k);
   await db().update(finTransactions).set({ ciphertext: encryptJson({ ...tx, category }, `fin:tx:${id}`, k) }).where(eq(finTransactions.id, id));
+}
+
+/** Transactions whose automatic category under the CURRENT rules differs from the saved one (e.g. after a new category is added). */
+export async function recategorizePreview(): Promise<{ id: number; date: string; description: string; amount: number; from: string; to: string }[]> {
+  return (await listTransactions()).flatMap((t) => {
+    const s = suggestCategory(t.description);
+    return s.confidence === "rule" && s.category !== t.category ? [{ id: t.id, date: t.date, description: t.description, amount: t.amount, from: t.category, to: s.category }] : [];
+  });
+}
+
+/** Apply several category changes at once. */
+export async function setCategories(changes: { id: number; category: string }[]): Promise<number> {
+  const k = key();
+  return db().transaction(async (tx) => {
+    let n = 0;
+    for (const c of changes) {
+      const row = (await tx.select().from(finTransactions).where(eq(finTransactions.id, c.id)).limit(1))[0];
+      if (!row || row.ciphertext === "pending") continue;
+      const t = decryptJson<Omit<StoredTx, "id">>(row.ciphertext, `fin:tx:${c.id}`, k);
+      await tx.update(finTransactions).set({ ciphertext: encryptJson({ ...t, category: c.category }, `fin:tx:${c.id}`, k) }).where(eq(finTransactions.id, c.id));
+      n++;
+    }
+    return n;
+  });
 }
 
 /** This month's actual spending by category vs the plan. */

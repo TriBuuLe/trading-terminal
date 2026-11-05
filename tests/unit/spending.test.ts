@@ -66,6 +66,7 @@ describe("plan vs actual spending", () => {
 
   it("matches by name, synonym, or the user's own mapping", () => {
     expect(matchPlanCategory("Transportation", ["Transport", "Food"])).toBe("Transport");
+    expect(matchPlanCategory("Travel", ["Rent", "Vacation"])).toBe("Vacation");
     expect(matchPlanCategory("Groceries", ["Food"])).toBe("Food");
     expect(matchPlanCategory("Shopping", ["Fun"], { Shopping: "Fun" })).toBe("Fun");
     expect(matchPlanCategory("Shopping", ["Shopping"], { Shopping: "" })).toBeNull(); // user said: ignore mapping

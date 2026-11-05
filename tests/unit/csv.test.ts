@@ -16,6 +16,10 @@ describe("CSV import", () => {
     expect(suggestCategory("LOBLAWS #1023 TORONTO").category).toBe("Groceries");
     expect(suggestCategory("NETFLIX.COM").category).toBe("Subscriptions");
     expect(suggestCategory("XYZ LLC").confidence).toBe("none");
+    for (const d of ["EXPEDIA 72384923", "AIR CANADA 0142", "MARRIOTT CHARLOTTE", "AIRBNB * HM4X", "DELTA AIR LINES ATLANTA", "HERTZ RENT-A-CAR"]) expect(suggestCategory(d).category, d).toBe("Travel");
+    // still commuting / car, not travel
+    expect(suggestCategory("UBER TRIP").category).toBe("Transportation");
+    expect(suggestCategory("SHELL OIL 5741").category).toBe("Transportation");
   });
   it("maps signed-amount and debit/credit layouts", () => {
     const a = importCsv("Date,Description,Amount\n2026-10-03,STARBUCKS,-5.25\n10/04/2026,PAYROLL ACME,1500.00\nbad,row,\n");

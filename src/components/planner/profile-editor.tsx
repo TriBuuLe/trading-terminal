@@ -300,6 +300,7 @@ const COMMON_EXPENSES: [string, "need" | "want"][] = [
   ["Dining out", "want"],
   ["Subscriptions", "want"],
   ["Shopping", "want"],
+  ["Travel", "want"],
   ["Fun", "want"],
 ];
 

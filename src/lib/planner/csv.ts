@@ -74,6 +74,11 @@ export const CATEGORY_RULES: [string, RegExp][] = [
   ["Transfers", CARD_PAYMENT],
   ["Income", /payroll|direct dep|salary|pay ?cheque|paycheck|deposit from/i],
   ["Transfers", /e-?transfer|interac|transfer|zelle|venmo|paypal transfer/i],
+  // Before rent/dining/transportation ("rent-a-car" is travel): flights, hotels, car rentals and trip bookings are travel, not commuting.
+  [
+    "Travel",
+    /expedia|booking\.com|airbnb|vrbo|hotels\.com|priceline|kayak|trip\.com|hopper|\bhotel|marriott|hilton|hyatt|\bihg\b|holiday inn|best western|sheraton|westin|hostel|air canada|westjet|porter air|flair air|delta air|united air|united\.com|american air|\baa\.com|southwest air|southwest\.com|jetblue|spirit air|frontier air|alaska air|air france|british airways|lufthansa|klm\b|emirates|airlines?\b|amtrak|via rail|greyhound|flixbus|megabus|hertz|avis\b|enterprise rent|budget rent|national car|turo\b/i,
+  ],
   ["Rent", /\brent\b|property mgmt|landlord/i],
   ["Groceries", /grocer|loblaw|no frills|sobeys|metro\b|safeway|kroger|costco|walmart|whole foods|trader joe|freshco|food basics|aldi|harris teeter|food lion|publix/i],
   [

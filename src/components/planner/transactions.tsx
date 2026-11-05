@@ -137,6 +137,8 @@ export function Transactions() {
         </section>
       )}
 
+      {(months.data?.length ?? 0) > 0 && <Recategorize onDone={refresh} />}
+
       <section className="rounded-md border border-border bg-background/40 p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-semibold">Saved transactions (one month at a time)</h3>
@@ -202,5 +204,97 @@ export function Transactions() {
         )}
       </section>
     </div>
+  );
+}
+
+interface Change {
+  id: number;
+  date: string;
+  description: string;
+  amount: number;
+  from: string;
+  to: string;
+}
+
+/** Re-sort saved transactions with the current category rules (e.g. after Travel was added). Nothing changes until confirmed. */
+function Recategorize({ onDone }: { onDone: () => Promise<unknown> }) {
+  const [changes, setChanges] = useState<Change[] | null>(null);
+  const [skip, setSkip] = useState<Set<number>>(new Set());
+  const check = () =>
+    api<Change[]>("/api/finances/transactions/recategorize")
+      .then((c) => {
+        setSkip(new Set());
+        setChanges(c);
+        if (!c.length) toast.success("Every saved transaction already matches the current categories");
+      })
+      .catch((e: Error) => toast.error(e.message));
+  const apply = useMutation({
+    mutationFn: (c: Change[]) => api<{ updated: number }>("/api/finances/transactions/recategorize", { method: "POST", body: { changes: c.map((x) => ({ id: x.id, category: x.to })) } }),
+    onSuccess: async (r) => {
+      toast.success(`Updated ${r.updated} transaction${r.updated === 1 ? "" : "s"}`);
+      setChanges(null);
+      await onDone();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const chosen = changes?.filter((c) => !skip.has(c.id)) ?? [];
+
+  return (
+    <section className="rounded-md border border-border bg-background/40 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-xs font-semibold">Re-check categories</h3>
+          <p className="text-[11px] text-muted-foreground">Sort already-saved transactions with the current rules (new categories like Travel). You review the changes first.</p>
+        </div>
+        {changes === null ? (
+          <Button size="sm" variant="outline" onClick={() => void check()}>
+            Re-check
+          </Button>
+        ) : (
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setChanges(null)}>
+              Cancel
+            </Button>
+            <Button size="sm" disabled={!chosen.length || apply.isPending} onClick={() => apply.mutate(chosen)}>
+              Apply {chosen.length}
+            </Button>
+          </div>
+        )}
+      </div>
+      {changes && changes.length > 0 && (
+        <div className="mt-2 max-h-72 overflow-auto">
+          <p className="mb-1 text-[10px] text-muted-foreground">Untick any you sorted yourself on purpose.</p>
+          <table className="w-full text-[11px]">
+            <tbody>
+              {changes.map((c) => (
+                <tr key={c.id} className="border-t border-border/50">
+                  <td className="w-6 py-0.5">
+                    <input
+                      type="checkbox"
+                      aria-label={`Change ${c.description}`}
+                      checked={!skip.has(c.id)}
+                      onChange={(e) =>
+                        setSkip((s) => {
+                          const n = new Set(s);
+                          if (e.target.checked) n.delete(c.id);
+                          else n.add(c.id);
+                          return n;
+                        })
+                      }
+                    />
+                  </td>
+                  <td className="num text-muted-foreground">{c.date}</td>
+                  <td className="max-w-72 truncate">{c.description}</td>
+                  <td className={cn("num text-right", c.amount < 0 ? "" : "text-up")}>{money(c.amount)}</td>
+                  <td className="pl-2 text-muted-foreground">
+                    {c.from} → <span className="text-foreground">{c.to}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }

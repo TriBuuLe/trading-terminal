@@ -69,6 +69,22 @@ export const profileSchema = z.object({
     .optional(),
 });
 
+/** Problems that would make the plan silently wrong (shown in the editor, enforced on save). */
+export function profileProblems(p: z.infer<typeof profileSchema>): { path: string; message: string }[] {
+  const out: { path: string; message: string }[] = [];
+  for (const i of p.incomes) {
+    if (i.startMonth && i.endMonth && i.endMonth < i.startMonth) {
+      out.push({ path: `income:${i.id}`, message: `“${i.name}” ends (${i.endMonth}) before it starts (${i.startMonth}), so it never counts. Fix the dates.` });
+    }
+  }
+  return out;
+}
+
+/** Stricter schema for saving. (Reading stays lenient so an older bad save can still be opened and fixed.) */
+export const profileInputSchema = profileSchema.superRefine((p, ctx) => {
+  for (const pr of profileProblems(p)) ctx.addIssue({ code: "custom", message: pr.message, path: [pr.path] });
+});
+
 export const assumptionsSchema = z.object({
   inflationPct: z.number().min(0).max(15),
   inflationSource: z.string(),

@@ -2,7 +2,8 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
-import { overrideWarning, riskScore } from "@/lib/planner/core";
+import { useNow } from "@/hooks/use-now";
+import { addMonths, averageIncome, incomeInMonth, monthlyEquivalent, overrideWarning, riskScore } from "@/lib/planner/core";
 import type { AccountType, Profile } from "@/lib/planner/types";
 import { cn } from "@/lib/utils";
 
@@ -101,8 +102,35 @@ export function BasicsSection({ p, set }: { p: Profile; set: Set }) {
   );
 }
 
+const ymOf = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+/** How one income line feeds the plan: active months in the next 12 and its share of the average. */
+function IncomeEffect({ i, now }: { i: Profile["incomes"][number]; now: string }) {
+  if (i.startMonth && i.endMonth && i.endMonth < i.startMonth) {
+    return (
+      <p className="text-[11px] text-down">
+        Ends ({i.endMonth}) before it starts ({i.startMonth}), so it never counts. Fix the dates.
+      </p>
+    );
+  }
+  const active = Array.from({ length: 12 }, (_, k) => incomeInMonth([i], addMonths(now, k))).filter((v) => v > 0).length;
+  const avg = averageIncome([i], now, 12);
+  return (
+    <p className="text-[10px] text-muted-foreground">
+      Active {active} of the next 12 months → adds ${avg.toFixed(2)}/month to your average
+      {active > 0 && active < 12 && ` ($${monthlyEquivalent(i.amount, i.frequency).toFixed(2)}/month while active)`}
+      {active === 0 && i.amount > 0 && " (check the dates: it doesn't fall in the next 12 months)"}.
+    </p>
+  );
+}
+
 export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
   const upd = (id: string, patch: Partial<Profile["incomes"][number]>) => set((x) => ({ ...x, incomes: x.incomes.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
+  const now = ymOf(useNow(60 * 60_000));
+  const total = averageIncome(p.incomes, now, 12);
   return (
     <Section
       title="Income (take-home, after tax)"
@@ -112,7 +140,8 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
       {p.incomes.length === 0 && <p className="text-[11px] text-muted-foreground">No income yet.</p>}
       <div className="space-y-1.5">
         {p.incomes.map((i) => (
-          <div key={i.id} className="flex flex-wrap items-center gap-2 text-xs">
+          <div key={i.id} className="space-y-0.5">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <input aria-label="Income name" className={cn(inp, "w-36")} value={i.name} onChange={(e) => upd(i.id, { name: e.target.value })} />
             <Num label="Amount per period" value={i.amount} onChange={(n) => upd(i.id, { amount: n })} />
             <select aria-label="Frequency" className={inp} value={i.frequency} onChange={(e) => upd(i.id, { frequency: e.target.value as typeof i.frequency })}>
@@ -137,8 +166,15 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
             </label>
             <Del label="Remove income" onClick={() => set((x) => ({ ...x, incomes: x.incomes.filter((y) => y.id !== i.id) }))} />
           </div>
+          <IncomeEffect i={i} now={now} />
+          </div>
         ))}
       </div>
+      {p.incomes.length > 0 && (
+        <p className="mt-2 text-[11px]">
+          Plan income (average of the next 12 months): <b className="num">${total.toFixed(2)}/month</b>
+        </p>
+      )}
     </Section>
   );
 }

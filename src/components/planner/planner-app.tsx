@@ -4,6 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { money } from "@/lib/format";
+import type { Plan } from "@/lib/planner/plan";
+import { profileProblems } from "@/lib/planner/schema";
 import type { Profile } from "@/lib/planner/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -84,17 +87,31 @@ function MyFinances({ initial }: { initial: Profile }) {
   const save = useSaveProfile();
   const dirty = JSON.stringify(p) !== JSON.stringify(initial);
   const set = (fn: (x: Profile) => Profile) => setP(fn);
+  const problems = profileProblems(p);
+  // The saved plan, shown here so the result of "Save & recalculate" is visible without switching tabs.
+  const plan = useQuery({ queryKey: ["plan"], queryFn: () => api<{ plan: Plan | null }>("/api/finances/plan") });
+  const pl = plan.data?.plan;
   return (
     <div className="@container space-y-3">
       <div className="sticky top-0 z-10 flex items-center justify-between rounded-md border border-border bg-panel/95 px-3 py-2 backdrop-blur">
-        <span className="text-xs text-muted-foreground">{dirty ? "Unsaved changes" : "All changes saved"}</span>
-        <div className="flex gap-2">
+        <div className="min-w-0 text-xs">
+          <span className={dirty ? "text-amber-300" : "text-muted-foreground"}>{dirty ? "Unsaved changes" : "All changes saved"}</span>
+          {pl && (
+            <span className="num ml-3 text-muted-foreground">
+              {plan.isFetching ? "recalculating…" : "Current plan:"} income {money(pl.monthlyIncome)}/mo · left to save{" "}
+              <span className={pl.cashFlow.available < 0 ? "text-down" : "text-foreground"}>{money(pl.cashFlow.available)}</span>/mo
+              {pl.feasibility.shortfall > 0 && <> · goals short {money(pl.feasibility.shortfall)}/mo</>}
+            </span>
+          )}
+          {problems.length > 0 && <p className="text-down">{problems[0]!.message}</p>}
+        </div>
+        <div className="flex shrink-0 gap-2">
           {dirty && (
             <Button size="sm" variant="ghost" onClick={() => setP(initial)}>
               Discard
             </Button>
           )}
-          <Button size="sm" disabled={!dirty || save.isPending} onClick={() => save.mutate(p, { onSuccess: () => toast.success("Saved: plan updated"), onError: (e) => toast.error(e.message) })}>
+          <Button size="sm" disabled={!dirty || save.isPending || problems.length > 0} onClick={() => save.mutate(p, { onSuccess: () => toast.success("Saved: plan updated"), onError: (e) => toast.error(e.message) })}>
             {save.isPending ? "Saving…" : "Save & recalculate"}
           </Button>
         </div>

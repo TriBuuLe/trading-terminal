@@ -228,3 +228,16 @@ describe("priority waterfall", () => {
     expect(buildPlan({ ...base, crossBorder: true }, DEFAULT_ASSUMPTIONS, "2026-11", { runs: 100 }).crossBorderWarning).toMatch(/PFIC/);
   });
 });
+
+import { profileInputSchema, profileProblems } from "@/lib/planner/schema";
+
+describe("profile validation", () => {
+  it("rejects an income that ends before it starts (it would silently count as $0)", () => {
+    const bad = { ...base, incomes: [{ id: "c", name: "Co-op", amount: 5300, frequency: "monthly" as const, kind: "coop" as const, startMonth: "2027-09", endMonth: "2026-12" }] };
+    expect(profileProblems(bad)).toHaveLength(1);
+    expect(profileInputSchema.safeParse(bad).success).toBe(false);
+    const ok = { ...bad, incomes: [{ ...bad.incomes[0]!, startMonth: "2026-09", endMonth: "2026-12" }] };
+    expect(profileProblems(ok)).toHaveLength(0);
+    expect(profileInputSchema.safeParse(ok).success).toBe(true);
+  });
+});

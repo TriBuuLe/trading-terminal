@@ -67,17 +67,25 @@ const num = (s: string | undefined) => {
 };
 
 /** Keyword rules → category. The user confirms or corrects every suggestion. */
+/** Paying off a credit card from your bank: a transfer between your own accounts, not income or spending. */
+export const CARD_PAYMENT = /payment.{0,20}thank ?you|mobile payment|online payment|autopay|auto pay|payment received|credit card payment|card payment/i;
+
 export const CATEGORY_RULES: [string, RegExp][] = [
+  ["Transfers", CARD_PAYMENT],
   ["Income", /payroll|direct dep|salary|pay ?cheque|paycheck|deposit from/i],
   ["Transfers", /e-?transfer|interac|transfer|zelle|venmo|paypal transfer/i],
   ["Rent", /\brent\b|property mgmt|landlord/i],
-  ["Groceries", /grocer|loblaw|no frills|sobeys|metro\b|safeway|kroger|costco|walmart|whole foods|trader joe|freshco|food basics|aldi/i],
-  ["Dining out", /restaurant|cafe|coffee|starbucks|tim hortons|mcdonald|uber ?eats|doordash|skip ?the|pizza|sushi|burger|chipotle|subway/i],
-  ["Transportation", /\buber\b|lyft|presto|transit|ttc|go transit|shell|esso|petro|chevron|exxon|parking|gas station/i],
-  ["Phone & internet", /rogers|bell\b|telus|fido|koodo|freedom mobile|verizon|at&t|t-mobile|comcast|xfinity/i],
-  ["Utilities", /hydro|electric|enbridge|water|utility/i],
-  ["Subscriptions", /netflix|spotify|disney|apple\.com|icloud|prime video|youtube premium|crave|hulu|patreon/i],
-  ["Shopping", /amazon|best buy|ikea|winners|h&m|uniqlo|shopify|etsy|target\b/i],
+  ["Groceries", /grocer|loblaw|no frills|sobeys|metro\b|safeway|kroger|costco|walmart|whole foods|trader joe|freshco|food basics|aldi|harris teeter|food lion|publix/i],
+  [
+    "Dining out",
+    /restaurant|cafe|cafeteria|bldg\d*caf|coffee|starbucks|tim hortons|second cup|dunkin|mcdonald|uber ?eats|doordash|grubhub|skip ?the|pizza|sushi|burger|chipotle|subway|taqueria|taco|\bpho\b|pho\b|ramen|thai|grill|kitchen|bistro|\bdeli\b|bakery|boba|bubble tea|wings|chick-fil-a|wendy|panera/i,
+  ],
+  ["Transportation", /\buber\b|lyft|presto|transit|ttc|go transit|shell|esso|petro|chevron|exxon|parking|gas station|\bbp\b|sunoco|wawa/i],
+  ["Phone & internet", /rogers|bell\b|telus|fido|koodo|freedom mobile|verizon|at&t|t-mobile|comcast|xfinity|spectrum/i],
+  ["Utilities", /hydro|electric|enbridge|water|utility|duke energy/i],
+  ["Subscriptions", /netflix|spotify|disney|apple\.com|icloud|prime video|youtube premium|crave|hulu|patreon|anthropic|claude\.ai|openai|chatgpt|github|notion|adobe|microsoft 365|google one|google storage/i],
+  ["Entertainment", /cinema|regal|\bamc\b|cineplex|theatre|theater|steam|playstation|xbox|nintendo|ticketmaster|eventbrite|bowling/i],
+  ["Shopping", /amazon|best buy|ikea|winners|h&m|uniqlo|shopify|etsy|target\b|nike|adidas|zara|lululemon|sephora|e-commerce|ulta/i],
   ["Health", /pharma|shoppers drug|rexall|cvs|walgreens|clinic|dental|physio/i],
   ["Education", /tuition|university|college|bookstore|coursera/i],
   ["Insurance", /insurance|assurance/i],
@@ -93,9 +101,25 @@ export function suggestCategory(description: string): { category: string; confid
  * Map a bank CSV to transactions. Finds date/description/amount columns by header
  * name; supports a single signed amount column or separate debit/credit columns.
  */
-export function importCsv(text: string): { rows: ParsedTx[]; skipped: number; columns: Record<string, number> } {
+/**
+ * Credit-card exports usually list purchases as POSITIVE and your payments as
+ * negative (the opposite of a bank account). Detect that: no debit/credit columns,
+ * most amounts positive, and a negative card-payment line or no negatives at all.
+ */
+export function looksLikeCardStatement(rows: ParsedTx[], hasDebitCreditColumns: boolean): boolean {
+  if (hasDebitCreditColumns || rows.length === 0) return false;
+  const spendRows = rows.filter((r) => !CARD_PAYMENT.test(r.description) && r.category !== "Income" && r.category !== "Transfers");
+  const positive = spendRows.filter((r) => r.amount > 0).length;
+  const paymentsNegative = rows.some((r) => CARD_PAYMENT.test(r.description) && r.amount < 0);
+  return spendRows.length > 0 && positive / spendRows.length >= 0.7 && (paymentsNegative || rows.every((r) => r.amount >= 0));
+}
+
+/** Flip signs so money out is negative (use for credit-card statements). */
+export const flipSigns = <T extends { amount: number }>(rows: T[]): T[] => rows.map((r) => ({ ...r, amount: -r.amount }));
+
+export function importCsv(text: string): { rows: ParsedTx[]; skipped: number; columns: Record<string, number>; looksLikeCard: boolean } {
   const grid = parseCsv(text);
-  if (grid.length < 2) return { rows: [], skipped: 0, columns: {} };
+  if (grid.length < 2) return { rows: [], skipped: 0, columns: {}, looksLikeCard: false };
   const header = grid[0]!.map((h) => h.trim().toLowerCase());
   const find = (...names: RegExp[]) => header.findIndex((h) => names.some((n) => n.test(h)));
   const cols = {
@@ -126,5 +150,5 @@ export function importCsv(text: string): { rows: ParsedTx[]; skipped: number; co
     }
     rows.push({ date, description: desc, amount: Math.round(amount * 100) / 100, ...suggestCategory(desc) });
   }
-  return { rows, skipped, columns: cols };
+  return { rows, skipped, columns: cols, looksLikeCard: looksLikeCardStatement(rows, cols.debit >= 0 || cols.credit >= 0) };
 }

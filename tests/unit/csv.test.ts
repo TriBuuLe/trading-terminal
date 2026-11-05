@@ -34,3 +34,42 @@ describe("CSV import", () => {
     expect(() => importCsv("foo,bar\n1,2")).toThrow(/header/);
   });
 });
+
+import { flipSigns, looksLikeCardStatement } from "@/lib/planner/csv";
+
+describe("credit-card statements", () => {
+  // Shaped like an Amex export: purchases positive, the payment negative.
+  const amex =
+    "Date,Description,Amount\n" +
+    "11/03/2026,AplPay IBMBLDG500CAFDURHAM NC,2.42\n" +
+    "11/01/2026,AplPay TAQUERIA HWY Durham NC,17.36\n" +
+    "10/30/2026,NIKE INC E-COMMERCE,91.38\n" +
+    "10/23/2026,AplPay REGAL CINEMASKNOXVILLE TN,23.04\n" +
+    "10/16/2026,MOBILE PAYMENT - THANK YOU,-510.70\n" +
+    "10/13/2026,ANTHROPIC* CLAUDE SUSAN FRANCISCO CA,20.00\n" +
+    "10/13/2026,AplPay SECOND CUP 21TORONTO,3.97\n" +
+    "10/12/2026,AplPay PRESTO MOBI/STORONTO,3.51\n";
+  it("detects the card layout and categorizes these merchants", () => {
+    const r = importCsv(amex);
+    expect(r.looksLikeCard).toBe(true);
+    expect(Object.fromEntries(r.rows.map((x) => [x.description.split(" ").slice(0, 2).join(" "), x.category]))).toEqual({
+      "AplPay IBMBLDG500CAFDURHAM": "Dining out",
+      "AplPay TAQUERIA": "Dining out",
+      "NIKE INC": "Shopping",
+      "AplPay REGAL": "Entertainment",
+      "MOBILE PAYMENT": "Transfers",
+      "ANTHROPIC* CLAUDE": "Subscriptions",
+      "AplPay SECOND": "Dining out",
+      "AplPay PRESTO": "Transportation",
+    });
+  });
+  it("flipping makes purchases money OUT and the payment a (positive) transfer in", () => {
+    const rows = flipSigns(importCsv(amex).rows);
+    expect(rows.find((x) => x.description.includes("TAQUERIA"))!.amount).toBe(-17.36);
+    expect(rows.find((x) => x.description.includes("MOBILE PAYMENT"))!.amount).toBe(510.7);
+  });
+  it("a normal bank account export is not mistaken for a card", () => {
+    expect(importCsv("Date,Description,Amount\n2026-10-03,STARBUCKS,-5.25\n2026-10-04,PAYROLL ACME,1500.00\n2026-10-05,LOBLAWS,-80\n").looksLikeCard).toBe(false);
+    expect(looksLikeCardStatement([], false)).toBe(false);
+  });
+});

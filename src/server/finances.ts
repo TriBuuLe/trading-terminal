@@ -115,21 +115,64 @@ export interface StoredTx {
   category: string;
 }
 
-export async function addTransactions(rows: Omit<StoredTx, "id">[]): Promise<number> {
-  if (!rows.length) return 0;
+const txKey = (t: { date: string; description: string; amount: number }) => `${t.date}|${t.description.toLowerCase()}|${t.amount.toFixed(2)}`;
+
+/**
+ * Save confirmed transactions, skipping ones already saved (same date,
+ * description and amount, counted, so two identical coffees the same day still
+ * count twice if the file has them twice). Re-uploading a file is harmless.
+ */
+export async function addTransactions(rows: Omit<StoredTx, "id">[]): Promise<{ saved: number; duplicates: number }> {
+  if (!rows.length) return { saved: 0, duplicates: 0 };
   const k = key();
-  // Insert first to get ids, then encrypt with the id as AAD.
-  const inserted = await db()
-    .insert(finTransactions)
-    .values(rows.map((r) => ({ month: r.date.slice(0, 7), ciphertext: "pending" })))
-    .returning({ id: finTransactions.id });
+  const months = [...new Set(rows.map((r) => r.date.slice(0, 7)))];
+  const existing = new Map<string, number>();
+  for (const m of months) for (const t of await listTransactions(m)) existing.set(txKey(t), (existing.get(txKey(t)) ?? 0) + 1);
+  const fresh = rows.filter((r) => {
+    const c = existing.get(txKey(r)) ?? 0;
+    if (c > 0) {
+      existing.set(txKey(r), c - 1);
+      return false;
+    }
+    return true;
+  });
+  if (fresh.length) {
+    await db().transaction(async (tx) => {
+      // Insert first to get ids, then encrypt with the id as AAD.
+      const inserted = await tx
+        .insert(finTransactions)
+        .values(fresh.map((r) => ({ month: r.date.slice(0, 7), ciphertext: "pending" })))
+        .returning({ id: finTransactions.id });
+      for (const [i, r] of fresh.entries()) {
+        const id = inserted[i]!.id;
+        await tx.update(finTransactions).set({ ciphertext: encryptJson(r, `fin:tx:${id}`, k) }).where(eq(finTransactions.id, id));
+      }
+    });
+  }
+  return { saved: fresh.length, duplicates: rows.length - fresh.length };
+}
+
+/** Flip the sign of every transaction in a month (fix a credit-card import saved the wrong way round). */
+export async function flipMonth(month: string): Promise<number> {
+  const k = key();
+  const rows = await listTransactions(month);
   await db().transaction(async (tx) => {
-    for (const [i, r] of rows.entries()) {
-      const id = inserted[i]!.id;
-      await tx.update(finTransactions).set({ ciphertext: encryptJson(r, `fin:tx:${id}`, k) }).where(eq(finTransactions.id, id));
+    for (const t of rows) {
+      const { id, ...rest } = t;
+      await tx.update(finTransactions).set({ ciphertext: encryptJson({ ...rest, amount: -rest.amount }, `fin:tx:${id}`, k) }).where(eq(finTransactions.id, id));
     }
   });
   return rows.length;
+}
+
+export async function deleteMonth(month: string): Promise<number> {
+  const r = await db().delete(finTransactions).where(eq(finTransactions.month, month)).returning({ id: finTransactions.id });
+  return r.length;
+}
+
+export async function transactionMonths(): Promise<{ month: string; count: number }[]> {
+  const rows = await db().execute<{ month: string; count: number }>(sql`select month, count(*)::int as count from fin_transactions group by month order by month desc`);
+  return [...rows];
 }
 
 export async function listTransactions(month?: string): Promise<StoredTx[]> {

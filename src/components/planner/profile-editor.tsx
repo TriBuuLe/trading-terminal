@@ -219,7 +219,7 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
       onAdd={() =>
         set((x) => ({
           ...x,
-          incomes: [...x.incomes, { id: uid(), name: "Job", amount: 0, frequency: "monthly", kind: "salary", basis: x.country === "US" ? "gross" : "net", startMonth: null, endMonth: null }],
+          incomes: [...x.incomes, { id: uid(), name: "Job", amount: 0, frequency: "monthly", kind: "salary", basis: "net", startMonth: null, endMonth: null }],
         }))
       }
     >

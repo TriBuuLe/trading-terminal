@@ -369,3 +369,72 @@ export const WIZARD_STEPS = [
   { key: "goals", label: "Goals", C: GoalSection },
   { key: "risk", label: "Risk", C: RiskSection },
 ] as const;
+
+export function TaxFactsSection({ p, set }: { p: Profile; set: Set }) {
+  const t = p.tax ?? {};
+  const upd = (patch: Partial<NonNullable<Profile["tax"]>>) => set((x) => ({ ...x, tax: { ...(x.tax ?? {}), ...patch } }));
+  const usIncome = t.usEarnedIncome ?? 0;
+  return (
+    <Section
+      title="Tax facts (for account eligibility)"
+      hint="Used only to check contribution limits for the mock accounts. Encrypted with the rest of your profile; never sent to the AI as exact numbers."
+    >
+      <div className="grid gap-2 text-xs @3xl:grid-cols-2">
+        <div className="space-y-1.5 rounded border border-border p-2">
+          <p className="font-medium">United States (Roth/Traditional IRA, 401(k), HSA)</p>
+          <label className="flex items-center justify-between gap-2">
+            US earned income this year <Num label="US earned income" value={usIncome} onChange={(n) => upd({ usEarnedIncome: n })} />
+          </label>
+          <label className="flex items-center justify-between gap-2">
+            Filing status
+            <select aria-label="Filing status" className={inp} value={t.filingStatus ?? "single"} onChange={(e) => upd({ filingStatus: e.target.value as "single" })}>
+              <option value="single">single</option>
+              <option value="hoh">head of household</option>
+              <option value="mfj">married filing jointly</option>
+              <option value="mfs">married filing separately</option>
+            </select>
+          </label>
+          <label className="flex items-center justify-between gap-2">
+            Estimated MAGI <Num label="MAGI" value={t.magi ?? 0} onChange={(n) => upd({ magi: n })} />
+          </label>
+          <label className="flex items-center justify-between gap-2">
+            HDHP coverage (for HSA)
+            <select aria-label="HSA coverage" className={inp} value={t.hsaCoverage ?? "none"} onChange={(e) => upd({ hsaCoverage: e.target.value as "none" })}>
+              <option value="none">none</option>
+              <option value="self">self-only</option>
+              <option value="family">family</option>
+            </select>
+          </label>
+        </div>
+        <div className="space-y-1.5 rounded border border-border p-2">
+          <p className="font-medium">Canada (TFSA, RRSP, FHSA)</p>
+          <label className="flex items-center justify-between gap-2">
+            Last year&apos;s earned income <Num label="Canadian earned income last year" value={t.caPrevYearEarnedIncome ?? 0} onChange={(n) => upd({ caPrevYearEarnedIncome: n })} />
+          </label>
+          <label className="flex items-center justify-between gap-2">
+            Unused RRSP room (notice of assessment) <Num label="Unused RRSP room" value={t.rrspUnusedRoom ?? 0} onChange={(n) => upd({ rrspUnusedRoom: n })} />
+          </label>
+          <label className="flex items-center justify-between gap-2">
+            TFSA room from CRA My Account (optional)
+            <input
+              aria-label="TFSA room from CRA"
+              type="number"
+              min={0}
+              className={numInp}
+              placeholder="auto"
+              value={t.tfsaRoomOverride ?? ""}
+              onChange={(e) => upd({ tfsaRoomOverride: e.target.value === "" ? null : Number(e.target.value) })}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-2">
+            Birth year <Num label="Birth year" value={t.birthYear ?? new Date().getFullYear() - p.age} onChange={(n) => upd({ birthYear: Math.round(n) })} className="w-20" />
+          </label>
+        </div>
+        <label className="flex items-center gap-2">
+          Marginal income-tax rate (estimate) <Num label="Marginal tax rate" value={t.marginalTaxPct ?? 22} onChange={(n) => upd({ marginalTaxPct: n })} className="w-16" />%
+          <span className="text-[10px] text-muted-foreground">used to estimate tax on non-qualified withdrawals</span>
+        </label>
+      </div>
+    </Section>
+  );
+}

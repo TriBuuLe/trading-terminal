@@ -10,6 +10,7 @@ import { finnhubConfigured } from "../finnhub";
 import { nextEarnings } from "../fundamentals";
 import { syncAssets } from "../orders";
 import { normalizeSnapshot } from "../quotes";
+import { runSchedules } from "../mock-broker";
 import { syncFills, syncOrders } from "../sync";
 
 export interface StepResult {
@@ -101,6 +102,11 @@ export async function runDailyJob(): Promise<{ ok: boolean; steps: StepResult[];
       created++;
     }
     return `checked ${checked.length} symbols (${watched.length} watched not auto-checked), ${created} new earnings notices`;
+  });
+
+  await step("auto-contributions", async () => {
+    const r = await runSchedules();
+    return r.length ? r.join("; ") : "no schedules due";
   });
 
   await step("sync-assets", async () => {

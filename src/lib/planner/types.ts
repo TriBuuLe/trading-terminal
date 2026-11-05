@@ -91,6 +91,24 @@ export interface Profile {
   sandboxPct: number;
   /** Debts at or above this APR count as high-interest. */
   highInterestAprPct: number;
+  /** Tax facts for account eligibility (encrypted with the rest of the profile). */
+  tax?: TaxFacts;
+}
+
+export interface TaxFacts {
+  /** US: does the user have US earned income (compensation) this year? */
+  usEarnedIncome?: number;
+  filingStatus?: "single" | "hoh" | "mfj" | "mfs";
+  magi?: number;
+  /** Marginal income-tax rate %, used to estimate tax on non-qualified withdrawals. */
+  marginalTaxPct?: number;
+  hsaCoverage?: "self" | "family" | "none";
+  /** Canada: last year's earned income and unused RRSP room (from your notice of assessment). */
+  caPrevYearEarnedIncome?: number;
+  rrspUnusedRoom?: number;
+  /** Real TFSA contributions/withdrawals outside this app, if any (from CRA My Account). */
+  tfsaRoomOverride?: number | null;
+  birthYear?: number;
 }
 
 export interface AssetClassAssumption {

@@ -54,6 +54,19 @@ export const profileSchema = z.object({
   employerMatchPct: z.number().min(0).max(20).optional(),
   sandboxPct: z.number().min(0).max(50),
   highInterestAprPct: z.number().min(0).max(50),
+  tax: z
+    .object({
+      usEarnedIncome: z.number().min(0).max(1e8).optional(),
+      filingStatus: z.enum(["single", "hoh", "mfj", "mfs"]).optional(),
+      magi: z.number().min(0).max(1e9).optional(),
+      marginalTaxPct: z.number().min(0).max(70).optional(),
+      hsaCoverage: z.enum(["self", "family", "none"]).optional(),
+      caPrevYearEarnedIncome: z.number().min(0).max(1e8).optional(),
+      rrspUnusedRoom: z.number().min(0).max(1e7).optional(),
+      tfsaRoomOverride: z.number().min(0).max(1e7).nullable().optional(),
+      birthYear: z.number().int().min(1900).max(2100).optional(),
+    })
+    .optional(),
 });
 
 export const assumptionsSchema = z.object({

@@ -218,6 +218,72 @@ export const planVersions = pgTable("plan_versions", {
   createdAt: createdAt(),
 });
 
+// ---------- mock tax-advantaged accounts (simulated broker) ----------
+
+/** Year-versioned official limits/rules (seeded from src/lib/accounts/rules.ts, each with a source URL). */
+export const accountRules = pgTable(
+  "account_rules",
+  {
+    year: integer("year").notNull(),
+    jurisdiction: text("jurisdiction", { enum: ["US", "CA"] }).notNull(),
+    key: text("key").notNull(),
+    value: jsonb("value").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    quote: text("quote").notNull(),
+    verifiedAt: text("verified_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.jurisdiction, t.year, t.key] })],
+);
+
+/** Simulated accounts (paper money; separate from the Alpaca trading sandbox). */
+export const mockAccounts = pgTable("mock_accounts", {
+  id: serial("id").primaryKey(),
+  type: text("type", { enum: ["ROTH_IRA", "TRADITIONAL_IRA", "401K", "HSA", "TFSA", "RRSP", "FHSA", "TAXABLE"] }).notNull(),
+  name: text("name").notNull(),
+  /** Roth 5-year clock: first tax year a contribution was made for. FHSA: year opened. */
+  firstContributionTaxYear: integer("first_contribution_tax_year"),
+  openedAt: tsz("opened_at").notNull().defaultNow(),
+  closedAt: tsz("closed_at"),
+});
+
+/** Append-only ledger; balances/positions are replayed from it. */
+export const mockTxns = pgTable(
+  "mock_txns",
+  {
+    id: serial("id").primaryKey(),
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => mockAccounts.id, { onDelete: "cascade" }),
+    at: tsz("at").notNull().defaultNow(),
+    kind: text("kind", { enum: ["contribution", "withdrawal", "buy", "sell"] }).notNull(),
+    taxYear: integer("tax_year"),
+    symbol: text("symbol"),
+    qty: money("qty"),
+    price: money("price"),
+    /** Cash change in the account (+ in, − out). */
+    cash: money("cash").notNull(),
+    /** Roth: change in contribution basis (contributions +, withdrawals of basis −). */
+    basisDelta: money("basis_delta").notNull().default("0"),
+    quotePrice: money("quote_price"),
+    note: text("note"),
+    source: text("source").notNull().default("manual"), // manual | fund | schedule
+  },
+  (t) => [index("mock_txns_account").on(t.accountId, t.at)],
+);
+
+/** Auto-contribution schedules (run by the daily cron on their day of month). */
+export const mockSchedules = pgTable("mock_schedules", {
+  id: serial("id").primaryKey(),
+  accountId: integer("account_id")
+    .notNull()
+    .references(() => mockAccounts.id, { onDelete: "cascade" }),
+  amount: money("amount").notNull(),
+  dayOfMonth: integer("day_of_month").notNull(),
+  active: boolean("active").notNull().default(true),
+  lastRunMonth: text("last_run_month"),
+  createdAt: createdAt(),
+});
+
 // ---------- infrastructure ----------
 
 /** Shared API response cache (survives across serverless invocations). */

@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingRows } from "../terminal/bits";
 import { AssumptionsAndData } from "./assumptions";
 import { PlanOverview } from "./overview";
-import { AccountSection, BasicsSection, DebtSection, emptyProfile, ExpenseSection, GoalSection, IncomeSection, RiskSection, SettingsSection, WIZARD_STEPS } from "./profile-editor";
+import { AccountSection, BasicsSection, DebtSection, emptyProfile, ExpenseSection, GoalSection, IncomeSection, RiskSection, SettingsSection, TaxFactsSection, WIZARD_STEPS } from "./profile-editor";
+import { MockAccounts } from "./accounts";
 import { Transactions } from "./transactions";
 
-type Tab = "overview" | "finances" | "transactions" | "assumptions";
+type Tab = "overview" | "finances" | "accounts" | "transactions" | "assumptions";
 
 function useSaveProfile() {
   const qc = useQueryClient();
@@ -84,7 +85,7 @@ function MyFinances({ initial }: { initial: Profile }) {
   const dirty = JSON.stringify(p) !== JSON.stringify(initial);
   const set = (fn: (x: Profile) => Profile) => setP(fn);
   return (
-    <div className="space-y-3">
+    <div className="@container space-y-3">
       <div className="sticky top-0 z-10 flex items-center justify-between rounded-md border border-border bg-panel/95 px-3 py-2 backdrop-blur">
         <span className="text-xs text-muted-foreground">{dirty ? "Unsaved changes" : "All changes saved"}</span>
         <div className="flex gap-2">
@@ -105,6 +106,7 @@ function MyFinances({ initial }: { initial: Profile }) {
       <AccountSection p={p} set={set} />
       <GoalSection p={p} set={set} />
       <RiskSection p={p} set={set} />
+      <TaxFactsSection p={p} set={set} />
       <SettingsSection p={p} set={set} />
     </div>
   );
@@ -113,6 +115,7 @@ function MyFinances({ initial }: { initial: Profile }) {
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "My plan" },
   { id: "finances", label: "My finances" },
+  { id: "accounts", label: "Accounts (Roth, TFSA…)" },
   { id: "transactions", label: "Transactions" },
   { id: "assumptions", label: "Assumptions & data" },
 ];
@@ -144,6 +147,7 @@ export function PlannerApp() {
         <div className="mx-auto max-w-6xl">
           {tab === "overview" && <PlanOverview country={profile.country} />}
           {tab === "finances" && <MyFinances key={JSON.stringify(profile)} initial={profile} />}
+          {tab === "accounts" && <MockAccounts profile={profile} onEditTaxFacts={() => setTab("finances")} />}
           {tab === "transactions" && <Transactions />}
           {tab === "assumptions" && <AssumptionsAndData />}
         </div>

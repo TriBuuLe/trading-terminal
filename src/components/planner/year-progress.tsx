@@ -25,8 +25,8 @@ interface YearResponse {
   balance: {
     anchor: { date: string; balance: number } | null;
     monthEnd: (number | null)[];
-    today: { date: string; cash: number };
-    projected: { date: string; cash: number; incomeAfterToday: number; budgetRest: number };
+    today: { date: string; cash: number; source: "entered" | "statements" } | null;
+    projected: { date: string; cash: number; incomeAfterToday: number; budgetRest: number } | null;
   } | null;
 }
 
@@ -52,7 +52,7 @@ function Tile({ label, value, sub, tone }: { label: string; value: React.ReactNo
   );
 }
 
-const STATUS_TONE = { met: "up", missed: "down", "no statement": "warn", "in progress": "info", upcoming: "muted" } as const;
+const STATUS_TONE = { met: "up", missed: "down", "no budget": "muted", "no statement": "warn", "in progress": "info", upcoming: "muted" } as const;
 
 /** The calendar-year plan vs statements: December goals, progress, what's needed for the rest of the year. */
 export function YearProgress() {
@@ -69,7 +69,7 @@ export function YearProgress() {
   return (
     <>
       <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
-        <Tile label={`${r.year} goal: save + invest`} value={w(p.goals.total)} sub={`save ${w(p.goals.save)} · invest ${w(p.goals.invest)} (My finances)`} />
+        <Tile label={`${r.year} goal: save + invest`} value={p.goals.total > 0 ? w(p.goals.total) : "not set"} sub={p.goals.total > 0 ? `save ${w(p.goals.save)} · invest ${w(p.goals.invest)} (My finances)` : "set Save / Invest in My finances"} />
         <Tile
           label={doneSpan ? `Kept so far (${doneSpan})` : "Kept so far"}
           value={w(so)}
@@ -79,19 +79,19 @@ export function YearProgress() {
         <Tile
           label="Projected Dec 31"
           value={w(rem.projected)}
-          tone={rem.shortfall > 0 ? "down" : "up"}
+          tone={p.goals.total > 0 ? (rem.shortfall > 0 ? "down" : "up") : undefined}
           sub={
             <>
               {w(so)} + {w(r.income?.ahead ?? 0)} still expected − {w(spendAhead)} budget {span(rem.months)}
-              {rem.shortfall > 0 ? <span className="text-down"> · {w(rem.shortfall)} short of goal</span> : <span className="text-up"> · goal reached</span>}
+              {p.goals.total <= 0 ? null : rem.shortfall > 0 ? <span className="text-down"> · {w(rem.shortfall)} short of goal</span> : <span className="text-up"> · goal reached</span>}
             </>
           }
         />
         <Tile
           label={rem.months.length ? `To reach the goal (${span(rem.months)})` : "To reach the goal"}
-          value={rem.shortfall > 0 ? `−${w(rem.cutSpendingPerMonth)}/mo` : "on track"}
-          tone={rem.shortfall > 0 ? "down" : "up"}
-          sub={rem.shortfall > 0 ? `spend this much less than your budget each month, or lower the goal` : `keep spending within your budget`}
+          value={p.goals.total <= 0 ? "—" : rem.shortfall > 0 ? `−${w(rem.cutSpendingPerMonth)}/mo` : "on track"}
+          tone={p.goals.total <= 0 ? undefined : rem.shortfall > 0 ? "down" : "up"}
+          sub={p.goals.total <= 0 ? "no goal set" : rem.shortfall > 0 ? `spend this much less than your budget each month, or lower the goal` : `keep spending within your budget`}
         />
       </div>
       {r.balance && <BalanceChart b={r.balance} year={r.year} />}
@@ -102,12 +102,13 @@ export function YearProgress() {
 
 /** Checking balance: month ends from your statements (solid), today's balance, and Dec 31 projected (dashed). */
 function BalanceChart({ b, year }: { b: NonNullable<YearResponse["balance"]>; year: number }) {
-  const todayIdx = Number(b.today.date.slice(5, 7)) - 1;
+  const t = b.today;
+  const todayIdx = t ? Number(t.date.slice(5, 7)) - 1 : -1;
   const data = MONTHS.map((label, k) => ({
     label,
     statements: b.monthEnd[k] ?? null,
-    today: k === todayIdx ? b.today.cash : null,
-    projected: k === todayIdx ? b.today.cash : k === 11 && todayIdx < 11 ? b.projected.cash : null,
+    today: t && t.source === "entered" && k === todayIdx ? t.cash : null,
+    projected: b.projected && t ? (k === todayIdx ? t.cash : k === 11 && todayIdx < 11 ? b.projected.cash : null) : null,
   }));
   return (
     <Card title={`Checking balance, ${year}`}>
@@ -120,14 +121,21 @@ function BalanceChart({ b, year }: { b: NonNullable<YearResponse["balance"]>; ye
             <Tooltip contentStyle={{ background: "#1c1d21", border: "1px solid #2a2c31", borderRadius: 6, fontSize: 11 }} formatter={(v, name) => [v === null || v === undefined ? "—" : money(Number(v)), String(name)]} />
             <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
             <Line dataKey="statements" name="End of month (statements)" stroke={C.actual} strokeWidth={2} dot={{ r: 2.5 }} isAnimationActive={false} />
-            <Line dataKey="projected" name="Projected" stroke={C.planned} strokeDasharray="4 3" strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
-            <Line dataKey="today" name="Today (you entered)" stroke={C.goal} strokeWidth={0} dot={{ r: 4, fill: C.goal }} isAnimationActive={false} />
+            {b.projected && <Line dataKey="projected" name="Projected" stroke={C.planned} strokeDasharray="4 3" strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />}
+            {t?.source === "entered" && <Line dataKey="today" name="Today (you entered)" stroke={C.goal} strokeWidth={0} dot={{ r: 4, fill: C.goal }} isAnimationActive={false} />}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
       <p className="num mt-1 text-[11px] text-muted-foreground">
-        {b.anchor ? <>Rebuilt from your statements, anchored on the bank&apos;s balance {w(b.anchor.balance)} on {b.anchor.date}. </> : <>Import a Bank of America CSV to draw past balances. </>}
-        Dec 31: {w(b.today.cash)} today + {w(b.projected.incomeAfterToday)} paychecks after today − {w(b.projected.budgetRest)} budget for the rest of the year = <b className="text-foreground">{w(b.projected.cash)}</b>. Card purchases count once you pay the card.
+        {b.anchor ? <>From your Bank of America statements: the bank&apos;s balance {w(b.anchor.balance)} on {b.anchor.date}, worked back through each checking transaction. </> : <>Import a Bank of America CSV to draw your balance. </>}
+        {t && b.projected ? (
+          <>
+            Dec 31: {w(t.cash)} {t.source === "entered" ? "today (you entered)" : `on ${t.date} (last statement)`} + {w(b.projected.incomeAfterToday)} paychecks after that − {w(b.projected.budgetRest)} budget = <b className="text-foreground">{w(b.projected.cash)}</b>.
+          </>
+        ) : (
+          <>Add income lines and a budget in My finances to project Dec 31.</>
+        )}{" "}
+        Card purchases count once you pay the card.
       </p>
     </Card>
   );

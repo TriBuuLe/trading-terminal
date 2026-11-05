@@ -109,7 +109,7 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await expect(page.getByText(`Plan vs statements, ${y}`)).toBeVisible();
     // One chart: money kept since Jan 1; the projection shows its parts
     await expect(page.getByText(`Checking balance, ${y}`)).toBeVisible();
-    await expect(page.getByText(/paychecks after today − \$[\d,]+ budget for the rest of the year/)).toBeVisible();
+    await expect(page.getByText(/Import a Bank of America CSV to draw your balance/)).toBeVisible(); // no statement balance and no balance entered: no fake $0 line
     await expect(page.getByText("Within budget")).toBeVisible();
     await page.screenshot({ path: "test-results/plan.png", fullPage: true });
   } finally {

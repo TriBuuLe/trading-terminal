@@ -111,7 +111,7 @@ export interface MonthActual {
   status: "full" | "thin" | "current" | "none";
 }
 
-export type MonthStatus = "met" | "missed" | "no statement" | "in progress" | "upcoming";
+export type MonthStatus = "met" | "missed" | "no budget" | "no statement" | "in progress" | "upcoming";
 
 export interface Progress {
   year: number;
@@ -158,7 +158,9 @@ export function progress(plan: YearPlan, p: Profile, actuals: MonthActual[], tod
     const complete = a?.status === "full" && a.income !== null && a.spent !== null;
     const actual = complete ? { income: a!.income!, spending: a!.spent!, invested: round2(a!.invested ?? 0), saved: round2(a!.income! - a!.spent! - (a!.invested ?? 0)) } : null;
     const status: MonthStatus = actual
-      ? actual.spending <= pl.spending + 1
+      ? pl.spending <= 0
+        ? "no budget"
+        : actual.spending <= pl.spending + 1
         ? "met"
         : "missed"
       : pl.month < current

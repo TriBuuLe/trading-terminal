@@ -411,15 +411,26 @@ export async function getYearProgress(year: number) {
       // Checking balance: month ends rebuilt from the newest statement balance; today = what you entered; Dec 31 = today + paychecks after today − your budget for the rest of the year
       const anchors = await getBalanceAnchors();
       const anchor = anchors.at(-1) ?? null;
-      const cash = profile.accounts.filter((a) => a.type === "CASH" || a.type === "HISA").reduce((t, a) => t + a.balance, 0);
-      const asOf = profile.cashSync?.balanceAsOf ?? today;
-      const incomeAfterToday = profile.incomes.reduce((t, i) => t + aheadFor(i, asOf, year).amount, 0);
-      const restMonths = plan ? plan.budget.reduce((t, r) => t + r.months.slice(Number(today.slice(5, 7)) - 1).reduce((x, y) => x + y, 0), 0) : 0;
+      const cashAccounts = profile.accounts.filter((a) => a.type === "CASH" || a.type === "HISA");
+      const r2 = (x: number) => Math.round(x * 100) / 100;
+      const monthEnd = monthEndBalances(year, anchor, txs);
+      // Start: the balance you entered; if you haven't entered one, the last balance from your statements (never $0 by default)
+      const lastData = txs.map((t) => t.date).sort().at(-1) ?? null;
+      const start = cashAccounts.length
+        ? { date: profile.cashSync?.balanceAsOf ?? today, cash: r2(cashAccounts.reduce((t, a) => t + a.balance, 0)), source: "entered" as const }
+        : anchor && lastData
+          ? { date: lastData, cash: monthEnd.filter((v): v is number => v !== null).at(-1) ?? anchor.balance, source: "statements" as const }
+          : null;
+      if (!start) return { anchor, monthEnd, today: null, projected: null };
+      const incomeAfter = profile.incomes.reduce((t, i) => t + aheadFor(i, start.date, year).amount, 0);
+      const fromMonth = Number(start.date.slice(5, 7)) - (start.source === "statements" ? 0 : 1); // statements: the months after the data
+      const budgetRest = plan ? plan.budget.reduce((t, r) => t + r.months.slice(fromMonth).reduce((x, y) => x + y, 0), 0) : 0;
       return {
         anchor,
-        monthEnd: monthEndBalances(year, anchor, txs),
-        today: { date: asOf, cash: Math.round(cash * 100) / 100 },
-        projected: { date: `${year}-12-31`, cash: Math.round((cash + incomeAfterToday - restMonths) * 100) / 100, incomeAfterToday: Math.round(incomeAfterToday * 100) / 100, budgetRest: Math.round(restMonths * 100) / 100 },
+        monthEnd,
+        today: start,
+        // Only project when there's something to project: income still to come or a budget
+        projected: incomeAfter > 0 || budgetRest > 0 ? { date: `${year}-12-31`, cash: r2(start.cash + incomeAfter - budgetRest), incomeAfterToday: r2(incomeAfter), budgetRest: r2(budgetRest) } : null,
       };
     })(),
     soFar: { months: s.fullMonths, received: s.income.actual, spent: s.spending.actual, invested: s.investments.year.net, saved: s.saved.actual },

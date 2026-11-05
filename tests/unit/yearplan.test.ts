@@ -104,3 +104,11 @@ describe("long-term goals", () => {
     expect(g).toMatchObject({ current: 3094.33, target: 50_000, monthsLeft: 25, pacePerMonth: 700, projected: 20_594.33, gap: 29_405.67, neededPerMonth: 1876.23 });
   });
 });
+
+describe("no budget yet", () => {
+  it("a month with no budget isn't judged over budget", () => {
+    const empty: YearPlan = { ...newYearPlan({ ...profile, expenses: [] }, 2026, "2026-01-02") };
+    const r = progress(empty, { ...profile, expenses: [] }, [{ month: "2026-01", income: 3000, spent: 1800, invested: 0, status: "full" }], "2026-11-05");
+    expect(r.months[0]!.status).toBe("no budget");
+  });
+});

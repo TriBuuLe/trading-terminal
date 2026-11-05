@@ -256,6 +256,16 @@ function IncomeLine({ i, year, p, pattern, upd, remove, applyPattern }: {
         <span className="num text-right font-medium">{usd(total)}</span>
         <span className="flex items-center justify-end gap-1.5 text-[10px]">
           {pattern && !applyPattern && <span className="rounded bg-up-muted px-1 text-up" title={`Matches ${pattern.count} payroll deposits from ${pattern.employer}`}>deposits ✓</span>}
+          {pattern && i.frequency !== "hourly" && Math.abs(pattern.average - i.amount) > Math.max(1, i.amount * 0.05) && (
+            <button
+              type="button"
+              className="rounded border border-amber-500/50 px-1 text-amber-300 hover:bg-amber-500/10"
+              title={`${pattern.count} deposits from ${pattern.employer} averaged ${usd(pattern.average)} (latest ${usd(pattern.amount)}); this line uses ${usd(i.amount)}. Click to use the average.`}
+              onClick={() => upd({ amount: pattern.average })}
+            >
+              deposits avg {usd(pattern.average)} · use
+            </button>
+          )}
           {applyPattern && (
             <button type="button" className="rounded border border-series-1/40 px-1 text-series-1 hover:bg-series-1/10" onClick={applyPattern} title={`${pattern!.employer}: ${usd(pattern!.amount)} ${pattern!.frequency}, ${pattern!.count} deposits ${pattern!.first} → ${pattern!.last}`}>
               use deposits
@@ -412,8 +422,6 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
   const net = netIncome(p, `${year}-01`, 12);
   const linesTotal = net.byMonth.reduce((s, m) => s + m.amount, 0);
   const pays = useQuery({ queryKey: ["paychecks"], queryFn: () => api<PayPattern[]>("/api/finances/paychecks") });
-  const actual = useQuery({ queryKey: ["summary", year], queryFn: () => api<{ summary: YearSummary | null }>(`/api/finances/summary?year=${year}`) });
-  const exp = actual.data?.summary ? expectedIncome(year, p, actual.data.summary.months.map((m) => ({ month: m.month, income: m.income, spent: m.spent, invested: m.invested, status: m.status }))) : null;
   const patternFor = (id: string) => (pays.data ?? []).find((x) => matchIncomeLine(x, p.incomes)?.id === id) ?? null;
   const unmatched = (pays.data ?? []).filter((x) => !matchIncomeLine(x, p.incomes));
   const apply = (x: PayPattern, line: Profile["incomes"][number] | null) =>
@@ -424,8 +432,6 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
         ? { ...pr, incomes: pr.incomes.map((i) => (i.id === line.id ? { ...i, ...fields, ...keep, hoursPerWeek: undefined, payEvery: undefined, repeatsYearly: false } : i)) }
         : { ...pr, incomes: [...pr.incomes, { id: uid(), ...fields }] };
     });
-  const firstM = exp?.statementMonths[0];
-  const lastM = exp?.statementMonths.at(-1);
   return (
     <Section
       title="Income"
@@ -479,23 +485,11 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
         </ul>
       )}
       {p.incomes.length > 0 && (
-        <div className="num mt-2 border-t border-border pt-2 text-[11px]">
-          {exp && exp.statementMonths.length ? (
-            <>
-              <span className="text-xs">
-                {year} expected take-home <b>{usd(exp.total)}</b>
-              </span>
-              <span className="text-muted-foreground">
-                {" "}
-                = {usd(exp.received)} received ({MONTH_ABBR[Number(firstM!.slice(5)) - 1]}–{MONTH_ABBR[Number(lastM!.slice(5)) - 1]} statements, {exp.statementMonths.length} months) + {usd(exp.expected)} from these lines (other{" "}
-                {12 - exp.statementMonths.length} months)
-              </span>
-            </>
-          ) : (
-            <span className="text-xs">
-              {year} expected take-home <b>{usd(linesTotal)}</b> <span className="text-muted-foreground">(from these lines)</span>
-            </span>
-          )}
+        <div className="num mt-2 flex items-baseline justify-between border-t border-border pt-2 text-xs">
+          <span>
+            {year} expected take-home <span className="text-[11px] text-muted-foreground">(Jan–Dec, all lines)</span>
+          </span>
+          <b>{usd(linesTotal)}</b>
         </div>
       )}
     </Section>
@@ -654,8 +648,8 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
   // Statements: average of full months (an estimate when × 12, not actual annual spending).
   const actual = useQuery({ queryKey: ["summary", year], queryFn: () => api<{ summary: YearSummary | null }>(`/api/finances/summary?year=${year}`) });
   const s = actual.data?.summary;
-  // Take-home to budget with: what came in (complete statement months) + income lines for the rest.
-  const exp = expectedIncome(year, p, (s?.months ?? []).map((m) => ({ month: m.month, income: m.income, spent: m.spent, invested: m.invested, status: m.status })));
+  // The budget is planned against the whole year's expected take-home (Jan–Dec, income lines).
+  const exp = expectedIncome(year, p);
   const planned = plannedMonths(plan, p).map((m, k) => ({ ...m, income: exp.months[k]!.amount, unassigned: round2(exp.months[k]!.amount - m.spending - m.save - m.invest) }));
   const income = exp.total;
   const spending = sum(planned.map((m) => m.spending));
@@ -722,7 +716,7 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
         </span>
         <span className="text-right">Proposed</span>
       </div>
-      {line("Take-home", <span className="text-muted-foreground" title="Months with a complete statement: what came in. Other months: your income lines.">Expected take-home{exp.statementMonths.length ? ` (${exp.statementMonths.length} months actual)` : ""}</span>, planned.map((m) => m.income), null)}
+      {line("Take-home", <span className="text-muted-foreground" title="Whole year, Jan–Dec, from your income lines">Expected take-home (income lines)</span>, planned.map((m) => m.income), null)}
       {rows.map((r) =>
         line(
           r.category,

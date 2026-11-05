@@ -13,6 +13,7 @@ export interface PayPattern {
   frequency: "weekly" | "biweekly" | "semimonthly" | "monthly";
   payDay: number | null; // 0 Sunday … 6 Saturday (weekly / biweekly)
   amount: number; // latest paycheck (take-home)
+  average: number; // average of all deposits found
   count: number;
   first: string;
   last: string;
@@ -64,6 +65,7 @@ export function detectPaychecks(txs: PayTx[]): PayPattern[] {
       frequency,
       payDay,
       amount: round2(last.amount),
+      average: round2(xs.reduce((s, x) => s + x.amount, 0) / xs.length),
       count: xs.length,
       first: xs[0]!.date,
       last: last.date,

@@ -104,17 +104,9 @@ describe("long-term goals", () => {
 });
 
 describe("expected take-home for the year", () => {
-  it("statements for complete months, income lines for the rest (missing statements use the plan)", () => {
-    // Lines: 3,000/month. Statements: Jan 3,200 (full), Feb thin (plan), Mar 2,900 (full), Nov running (plan)
-    const r = expectedIncome(2026, profile, [
-      { month: "2026-01", income: 3200, spent: 1000, invested: 0, status: "full" },
-      { month: "2026-02", income: 100, spent: 10, invested: 0, status: "thin" },
-      { month: "2026-03", income: 2900, spent: 1000, invested: 0, status: "full" },
-      { month: "2026-11", income: 500, spent: 100, invested: 0, status: "current" },
-    ]);
-    expect(r.statementMonths).toEqual(["2026-01", "2026-03"]);
-    expect(r.months[1]).toEqual({ month: "2026-02", amount: 3000, source: "plan" });
-    // received 6,100 + 10 months × 3,000 = 36,100
-    expect(r).toMatchObject({ received: 6100, expected: 30000, total: 36100 });
+  it("the whole year Jan–Dec from income lines; statements don't change it", () => {
+    const r = expectedIncome(2026, profile);
+    expect(r.months).toHaveLength(12);
+    expect(r.total).toBe(36_000); // 12 × 3,000
   });
 });

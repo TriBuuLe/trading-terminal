@@ -390,7 +390,7 @@ export async function getYearProgress(year: number) {
     plan,
     planned: plan ? plannedMonths(plan, profile) : null,
     progress: plan ? progress(plan, profile, actuals, today) : null,
-    expectedIncome: expectedIncome(year, profile, actuals),
+    expectedIncome: expectedIncome(year, profile),
     longTerm: longTermGoals(profile, profile.yearPlans?.[today.slice(0, 4)] ?? plan, netWorth, today),
     netWorth: Math.round(netWorth * 100) / 100,
     years: Object.keys(profile.yearPlans ?? {}).sort(),

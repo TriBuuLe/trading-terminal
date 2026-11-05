@@ -81,8 +81,9 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     // Each income line is one row; the ACME deposits match the "Co-op" line and can be applied to it.
     await page.getByRole("button", { name: "use deposits" }).click();
     await expect(page.getByText("deposits ✓")).toBeVisible();
-    // Expected take-home = what came in (Sep + Oct statements: 2 × 2,650) + income lines for the other 10 months
-    await expect(page.getByText(/expected take-home \$[\d,.]+ = \$5,300\.00 received \(Sep–Oct statements, 2 months\)/)).toBeVisible();
+    // Expected take-home: the whole year from income lines (4 × 3,000 + 4 × 2,650 = 22,600), not statements
+    await expect(page.getByText(`${y} expected take-home`)).toBeVisible();
+    await expect(page.getByText("$22,600.00")).toBeVisible();
     // ▸ opens a line's editor with labeled fields
     await page.getByRole("button", { name: "Edit Summer job" }).click();
     await expect(page.getByLabel("Income name")).toHaveValue("Summer job");

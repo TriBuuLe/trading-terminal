@@ -63,7 +63,7 @@ export async function financeContext() {
       investMonths: plan.invest,
       decemberGoals: y?.progress?.goals,
     },
-    expectedTakeHome: y?.expectedIncome && { total: y.expectedIncome.total, receivedFromStatements: y.expectedIncome.received, expectedFromIncomeLines: y.expectedIncome.expected, statementMonths: y.expectedIncome.statementMonths, byMonth: y.expectedIncome.months },
+    expectedTakeHome: y?.expectedIncome && { total: y.expectedIncome.total, note: "whole year Jan–Dec from income lines; the budget is planned against this", byMonth: y.expectedIncome.months },
     plannedByMonth: y?.planned?.map((m) => ({ month: m.month, takeHome: r2(m.income), spending: r2(m.spending), save: m.save, invest: m.invest, unassigned: r2(m.unassigned) })),
     planVsStatements: y?.progress && {
       months: y.progress.months.map((m) => ({ month: m.month, status: m.status, actual: m.actual })),
@@ -105,7 +105,7 @@ Identity:
 Honesty:
 - If something isn't in CONTEXT, say you don't have it. Don't guess, don't fill gaps.
 - Planned income = CONTEXT.plannedByMonth / incomeLines (what the plan expects). Received income = CONTEXT.statements.incomeSources (deposits). Say which one you mean.
-- For budgeting the year, use CONTEXT.expectedTakeHome.total (received from statements + income lines for the other months), not the income lines alone.
+- For budgeting the year, use CONTEXT.expectedTakeHome.total: the whole year's expected take-home (Jan–Dec) from the income lines.
 - Only write "a × b = c" when it's exactly true. A total of several different deposits is a sum, not latest amount × count.
 
 Rules:

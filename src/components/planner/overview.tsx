@@ -70,6 +70,12 @@ function CashFlowBar({ plan }: { plan: Plan }) {
           </div>
         ))}
       </div>
+      <ul className="space-y-0.5 text-[10px] text-muted-foreground">
+        {plan.spending.needs.length > 0 && <li>Needs = {plan.spending.needs.map((e) => `${e.category} ${money(e.monthly, { whole: true })}`).join(" + ")}</li>}
+        {plan.spending.wants.length > 0 && <li>Wants = {plan.spending.wants.map((e) => `${e.category} ${money(e.monthly, { whole: true })}`).join(" + ")}</li>}
+        {cf.debtMinimums > 0 && <li>Debt minimums = the minimum payment on each debt</li>}
+        <li>Left to save = income − needs − wants − debt minimums</li>
+      </ul>
       <p className="text-[10px] text-muted-foreground">
         Thin bar = the 50/30/20 guideline: needs {money(g.needs)} · wants {money(g.wants)} · savings {money(g.savings)}. Income is your 12-month average take-home ({money(cf.income)}/mo).
       </p>
@@ -293,7 +299,9 @@ export function PlanOverview({ country }: { country: Country }) {
                 <tr className="text-left">
                   <th className="py-1 font-medium">Goal</th>
                   <th className="text-right font-medium">Target</th>
-                  <th className="text-right font-medium">Need/mo</th>
+                  <th className="text-right font-medium" title="Monthly amount that reaches the target on time in 80% of 5,000 simulated markets">
+                    Need/mo (80% odds)
+                  </th>
                   <th className="text-right font-medium">Getting/mo</th>
                   <th className="pl-3 font-medium">Where</th>
                   <th className="font-medium">Mix (stocks/bonds/cash)</th>
@@ -310,7 +318,12 @@ export function PlanOverview({ country }: { country: Country }) {
                       </div>
                     </td>
                     <td className="num text-right">{money(g.goal.target, { whole: true })}</td>
-                    <td className="num text-right">{money(g.requiredMonthly)}</td>
+                    <td className="num text-right">
+                      {money(g.requiredMonthly)}
+                      <div className="text-[10px] text-muted-foreground" title="Coin-flip amount: the median outcome reaches the target">
+                        50/50: {money(g.medianMonthly)}
+                      </div>
+                    </td>
                     <td className="num text-right">
                       <span className={g.onTrack ? "text-up" : "text-down"}>{money(g.allocatedMonthly)}</span>
                       {!g.onTrack && <div className="text-[10px] text-down">behind {money(g.requiredMonthly - g.allocatedMonthly)}/mo</div>}

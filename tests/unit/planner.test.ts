@@ -215,10 +215,14 @@ describe("priority waterfall", () => {
       { runs: 500 },
     );
     const car = p.goals[0]!;
-    // 24 months away → short horizon → 100% cash at 0.5% real: PMT ≈ 12000·r/((1+r)^24−1), r = 0.005/12
+    // 24 months away → short horizon → 100% cash at 0.5% real. Median amount: PMT = 12000·r/((1+r)^24−1), r = 0.005/12.
+    // Cash barely moves (σ 1%), so the 80%-odds amount is only a little above the median amount.
     expect(car.band).toBe("short");
     expect(car.account.type).toBe("HISA");
-    expect(car.requiredMonthly).toBeCloseTo(requiredMonthly(12_000, 0, 24, 0.5), 2);
+    expect(car.medianMonthly).toBeCloseTo(requiredMonthly(12_000, 0, 24, 0.5), 2);
+    expect(car.requiredMonthly).toBeGreaterThanOrEqual(car.medianMonthly);
+    expect(car.requiredMonthly).toBeLessThan(car.medianMonthly * 1.02);
+    expect(car.sim.probability!).toBeGreaterThan(0.75);
     expect(car.allocatedMonthly).toBe(car.requiredMonthly);
     expect(p.waterfall.find((s) => s.key === "invest")!.monthly).toBeCloseTo(1600 - car.requiredMonthly, 2);
     expect(car.onTrack).toBe(true);
@@ -267,5 +271,29 @@ describe("repeating co-op terms", () => {
   });
   it("a one-off term that already ended counts nothing", () => {
     expect(averageIncome([term("2026-05", "2026-08", false)], "2026-11", 12)).toBe(0);
+  });
+});
+
+describe("goal contributions target 80% odds on the real glide path", () => {
+  it("a 10-year stock goal funded at 'need/mo' really has ~80% odds (it used to show 17%)", () => {
+    const p = buildPlan(
+      {
+        ...base,
+        incomes: [{ id: "i", name: "Job", amount: 20_000, frequency: "monthly", kind: "salary" }],
+        accounts: [{ id: "a", name: "Savings", type: "HISA", balance: 20_000 }],
+        goals: [{ id: "g", name: "Long-term", kind: "long_term", target: 50_000, targetDate: "2036-12", priority: 1, current: 2_000 }],
+      },
+      DEFAULT_ASSUMPTIONS,
+      "2026-11",
+      { runs: 5000 },
+    );
+    const g = p.goals[0]!;
+    expect(g.allocatedMonthly).toBe(g.requiredMonthly);
+    // De-risking toward the date lowers returns, and 80% > 50%: needs more than the coin-flip amount.
+    expect(g.requiredMonthly).toBeGreaterThan(g.medianMonthly);
+    // The odds shown match the planning target (independent 5,000-run simulation vs the 1,000-run solve).
+    expect(g.sim.probability!).toBeGreaterThan(0.76);
+    expect(g.sim.probability!).toBeLessThan(0.86);
+    expect(g.onTrack).toBe(true);
   });
 });

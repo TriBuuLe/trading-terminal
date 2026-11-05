@@ -17,7 +17,10 @@ import {
   type HorizonBand,
   type PayoffResult,
 } from "./core";
-import { expectedReturnPct, simulate, type Mix, type SimResult } from "./montecarlo";
+import { expectedReturnPct, requiredForProbability, simulate, type Mix, type SimResult } from "./montecarlo";
+
+/** Goals are planned for 80% odds of being on time (a 50/50 plan fails half the time). */
+export const GOAL_CONFIDENCE = 0.8;
 import type { AccountType, Assumptions, Country, Goal, Profile, YearMonth } from "./types";
 
 /** Which account a goal's money should live in (defaults; the advisor explains them). */
@@ -56,7 +59,10 @@ export interface GoalPlan {
   mix: Mix;
   expectedRealReturnPct: number;
   account: { type: AccountType; why: string };
+  /** Monthly amount for GOAL_CONFIDENCE (80%) odds of hitting the target on time. */
   requiredMonthly: number;
+  /** Monthly amount for a 50/50 (median) outcome. */
+  medianMonthly: number;
   allocatedMonthly: number;
   onTrack: boolean;
   sim: SimResult;
@@ -69,6 +75,8 @@ export interface Plan {
   /** Income month by month for the next 12 months (what the average is made of). */
   incomeByMonth: { month: YearMonth; amount: number }[];
   cashFlow: CashFlow;
+  /** What's inside "needs" and "wants" (for the legend). */
+  spending: { needs: { category: string; monthly: number }[]; wants: { category: string; monthly: number }[] };
   savingsTarget: number;
   cuts: { category: string; cut: number }[];
   emergency: { months: number; full: number; starter: number; current: number };
@@ -123,7 +131,19 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
       mix,
       expectedRealReturnPct: round2(er),
       account: accountForGoal(p.country, g, band, income * 12),
-      requiredMonthly: requiredMonthly(g.target, current, monthsLeft, er),
+      // Planning target: 80% odds of reaching the goal on time, on the same glide path as the odds shown.
+      requiredMonthly: requiredForProbability({
+        current,
+        months: monthsLeft,
+        mixAt: (m) => goalMix(m / 12, equityLong),
+        assumptions: a,
+        target: g.target,
+        p: GOAL_CONFIDENCE,
+        runs: Math.min(runs, 1000),
+        seed: seed + 500 + goalPlans.length,
+      }),
+      // Coin-flip amount (median outcome), at today's mix, for comparison.
+      medianMonthly: requiredMonthly(g.target, current, monthsLeft, er),
       allocatedMonthly: 0,
       onTrack: false,
       sim: null as unknown as SimResult,
@@ -260,6 +280,10 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
     monthlyIncome: round2(income),
     incomeByMonth: incomeTimeline(p.incomes, asOf, 12),
     cashFlow: cf,
+    spending: {
+      needs: p.expenses.filter((e) => e.kind === "need" && e.monthly > 0).map((e) => ({ category: e.category, monthly: e.monthly })),
+      wants: p.expenses.filter((e) => e.kind === "want" && e.monthly > 0).map((e) => ({ category: e.category, monthly: e.monthly })),
+    },
     savingsTarget,
     cuts: cutSuggestions(p.expenses, savingsTarget - Math.max(0, cf.available)),
     emergency: { ...ef, current: round2(efCurrent) },

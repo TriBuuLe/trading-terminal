@@ -115,6 +115,26 @@ export function simulate(input: SimInput): SimResult {
   };
 }
 
+/**
+ * Smallest monthly contribution that reaches `target` with probability ≥ `p`
+ * (e.g. 0.8 = 80% of simulated markets), following the same glide path as the
+ * odds shown. Every evaluation reuses the same seed (common random numbers), so
+ * probability is monotonic in the contribution and bisection is exact to a cent.
+ */
+export function requiredForProbability(i: Omit<SimInput, "monthlyContribution"> & { target: number; p: number }): number {
+  const prob = (pmt: number) => simulate({ ...i, monthlyContribution: pmt, runs: i.runs ?? 1000, seed: i.seed ?? 99 }).probability ?? 0;
+  if (prob(0) >= i.p) return 0;
+  let lo = 0;
+  let hi = Math.max(1, (i.target - i.current) / Math.max(1, i.months));
+  for (let k = 0; k < 20 && prob(hi) < i.p; k++) hi *= 2;
+  while (hi - lo > 0.01) {
+    const mid = (lo + hi) / 2;
+    if (prob(mid) >= i.p) hi = mid;
+    else lo = mid;
+  }
+  return Math.ceil(hi * 100) / 100;
+}
+
 /** Expected real geometric return of a mix (for deterministic contribution math). */
 export function expectedReturnPct(mix: Mix, a: Assumptions): number {
   return mix.equity * a.classes.equity.realReturnPct + mix.bonds * a.classes.bonds.realReturnPct + mix.cash * a.classes.cash.realReturnPct;

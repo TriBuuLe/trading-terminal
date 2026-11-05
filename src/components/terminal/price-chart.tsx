@@ -14,7 +14,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { rsi, sma, vwap, type OhlcvBar } from "@/lib/indicators";
 import { compact, price } from "@/lib/format";
 import { etParts } from "@/lib/time";
@@ -67,8 +67,24 @@ interface Hover {
   label: string;
 }
 
+/** Keep strictly increasing chart times (drops duplicates, e.g. two bars mapping to one day). */
+function dedupe(bars: OhlcvBar[], daily: boolean): OhlcvBar[] {
+  const out: OhlcvBar[] = [];
+  let prev: string | number | null = null;
+  for (const b of bars) {
+    const t = toTime(b.t, daily) as string | number;
+    if (prev !== null && t <= prev) {
+      if (t === prev) out[out.length - 1] = b; // same slot: keep the later bar
+      continue;
+    }
+    out.push(b);
+    prev = t;
+  }
+  return out;
+}
+
 export function PriceChart({
-  bars,
+  bars: rawBars,
   daily,
   visibleFrom,
   overlays,
@@ -85,6 +101,8 @@ export function PriceChart({
   const el = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
+
+  const bars = useMemo(() => dedupe(rawBars, daily), [rawBars, daily]);
 
   useEffect(() => {
     if (!el.current || bars.length === 0) return;

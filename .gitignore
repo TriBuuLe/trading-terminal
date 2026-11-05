@@ -50,3 +50,5 @@ next-env.d.ts
 
 # local scratch (never committed)
 /.scratch
+/.next-e2e
+/.next-build

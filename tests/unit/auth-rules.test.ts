@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { hasCronBearer, isAllowedLogin, isSelfAuthenticatingPath } from "@/server/auth-rules";
+import { afterEach, vi } from "vitest";
+import { demoAuthBypass, hasCronBearer, isAllowedLogin, isSelfAuthenticatingPath } from "@/server/auth-rules";
 
 describe("auth rules", () => {
   it("allows only the configured GitHub user (case-insensitive)", () => {
@@ -28,5 +29,21 @@ describe("auth rules", () => {
     expect(isSelfAuthenticatingPath("/api/orders")).toBe(false);
     expect(isSelfAuthenticatingPath("/")).toBe(false);
     expect(isSelfAuthenticatingPath("/api/healthz")).toBe(false);
+  });
+});
+
+describe("demo auth bypass", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("only in DEMO_MODE, never on Vercel or in production", () => {
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("NODE_ENV", "development");
+    expect(demoAuthBypass()).toBe(false);
+    vi.stubEnv("DEMO_MODE", "true");
+    expect(demoAuthBypass()).toBe(true);
+    vi.stubEnv("VERCEL", "1");
+    expect(demoAuthBypass()).toBe(false);
+    vi.stubEnv("VERCEL", "");
+    vi.stubEnv("NODE_ENV", "production");
+    expect(demoAuthBypass()).toBe(false);
   });
 });

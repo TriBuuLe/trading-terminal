@@ -1,5 +1,5 @@
 import { auth } from "@/auth";
-import { hasCronBearer, isAllowedLogin } from "./auth-rules";
+import { demoAuthBypass, hasCronBearer, isAllowedLogin } from "./auth-rules";
 import { errorResponse } from "./http";
 
 type Handler<C> = (req: Request, ctx: C) => Promise<Response>;
@@ -18,7 +18,7 @@ export function route<C = unknown>(handler: Handler<C>, opts: { cron?: "only" | 
       if (opts.cron === "only" && !bearerOk) {
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       }
-      if (!bearerOk) {
+      if (!bearerOk && !demoAuthBypass()) {
         const session = await auth();
         if (!session || !isAllowedLogin(session.login)) {
           return Response.json({ error: "Unauthorized" }, { status: 401 });

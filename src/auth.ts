@@ -1,7 +1,7 @@
 import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
 import { NextResponse } from "next/server";
-import { isAllowedLogin, isSelfAuthenticatingPath } from "./server/auth-rules";
+import { demoAuthBypass, isAllowedLogin, isSelfAuthenticatingPath } from "./server/auth-rules";
 
 declare module "next-auth" {
   interface Session {
@@ -34,7 +34,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     /** Used by proxy.ts. Route handlers re-check with requireAuth(). */
     authorized({ auth: session, request }) {
       const { pathname } = request.nextUrl;
-      if (isSelfAuthenticatingPath(pathname)) return true;
+      if (isSelfAuthenticatingPath(pathname) || demoAuthBypass()) return true;
       if (session && isAllowedLogin(session.login)) return true;
       if (pathname.startsWith("/api/")) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

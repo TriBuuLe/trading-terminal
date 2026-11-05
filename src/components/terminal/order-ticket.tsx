@@ -157,9 +157,10 @@ export function OrderTicket() {
   const req = useMemo(() => toRequest(symbol, f), [symbol, f]);
   const parsed = orderRequestSchema.safeParse(req);
   const problems = useMemo(() => {
+    if (asset.isPending) return ["Checking symbol…"];
     if (!parsed.success) return parsed.error.issues.map((i) => i.message);
     return validateOrder(parsed.data, asset.data ?? null, { positionQty: position?.qty ?? null });
-  }, [parsed, asset.data, position]);
+  }, [parsed, asset.data, asset.isPending, position]);
   const sizeEntered = f.sizeBy === "shares" ? f.qty : f.notional;
 
   const refPrice = f.side === "buy" ? (q?.ask ?? q?.price ?? null) : (q?.bid ?? q?.price ?? null);

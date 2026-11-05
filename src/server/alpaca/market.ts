@@ -1,4 +1,6 @@
 import { cache, TTL } from "../cache";
+import * as demo from "../demo";
+import { env } from "../env";
 import { data, feed } from "./client";
 import {
   barsResponseSchema,
@@ -10,6 +12,8 @@ import {
   type NewsArticle,
   type Snapshot,
 } from "./schemas";
+
+const isDemo = () => env().DEMO_MODE;
 
 export type Timeframe = "1Min" | "5Min" | "15Min" | "1Hour" | "1Day";
 
@@ -23,6 +27,7 @@ const uniq = (xs: string[]) => [...new Set(xs.map((s) => s.trim().toUpperCase())
 export async function getSnapshots(symbols: string[], opts: { fresh?: boolean } = {}): Promise<Record<string, Snapshot | null>> {
   const syms = uniq(symbols);
   if (syms.length === 0) return {};
+  if (isDemo()) return Object.fromEntries(syms.map((s) => [s, demo.snapshot(s)]));
   const out: Record<string, Snapshot | null> = {};
   // Keep URLs reasonable: chunk at 100 symbols.
   for (let i = 0; i < syms.length; i += 100) {
@@ -44,6 +49,7 @@ export async function getBars(
 ): Promise<Record<string, Bar[]>> {
   const syms = uniq(symbols);
   if (syms.length === 0) return {};
+  if (isDemo()) return Object.fromEntries(syms.map((s) => [s, demo.bars(s, timeframe, start)]));
   const ttl = opts.ttlMs ?? (timeframe === "1Day" ? TTL.barsDaily : TTL.bars);
   const key = `bars:${timeframe}:${start}:${end ?? ""}:${syms.join(",")}`;
   return cache.getOrLoad(key, ttl, async () => {
@@ -77,6 +83,7 @@ export async function getBars(
 
 export async function getNews(symbols: string[], limit = 20): Promise<NewsArticle[]> {
   const syms = uniq(symbols);
+  if (isDemo()) return demo.news(syms);
   const key = `news:${limit}:${syms.join(",")}`;
   return cache.getOrLoad(key, TTL.news, async () => {
     const res = await data("/v1beta1/news", {
@@ -88,12 +95,14 @@ export async function getNews(symbols: string[], limit = 20): Promise<NewsArticl
 }
 
 export function getMovers(top = 50) {
+  if (isDemo()) return Promise.resolve(demo.movers());
   return cache.getOrLoad(`movers:${top}`, TTL.screener, () =>
     data("/v1beta1/screener/stocks/movers", { schema: moversSchema, query: { top: Math.min(50, top) } }),
   );
 }
 
 export function getMostActives(top = 50, by: "volume" | "trades" = "volume") {
+  if (isDemo()) return Promise.resolve(demo.mostActives());
   return cache.getOrLoad(`actives:${by}:${top}`, TTL.screener, () =>
     data("/v1beta1/screener/stocks/most-actives", { schema: mostActivesSchema, query: { top: Math.min(100, top), by } }),
   );

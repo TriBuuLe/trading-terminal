@@ -25,3 +25,11 @@ export function isSelfAuthenticatingPath(pathname: string): boolean {
     pathname === "/api/health" // session OR CRON_SECRET bearer, checked in the route
   );
 }
+
+/**
+ * DEMO_MODE login bypass for local demos and the Playwright smoke test.
+ * Never on Vercel and never in a production build, even if DEMO_MODE is set.
+ */
+export function demoAuthBypass(): boolean {
+  return process.env.DEMO_MODE === "true" && !process.env.VERCEL && process.env.NODE_ENV !== "production";
+}

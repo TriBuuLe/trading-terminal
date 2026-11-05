@@ -16,7 +16,7 @@ export const GET = route(async () => {
     finnhubEnabled: Boolean(e.FINNHUB_API_KEY),
     slippageBps: e.SLIPPAGE_BPS,
     commissionPerTrade: e.COMMISSION_PER_TRADE,
-    login: session?.login ?? null,
+    login: session?.login ?? (e.DEMO_MODE ? "demo" : null),
   };
   return Response.json(cfg);
 });

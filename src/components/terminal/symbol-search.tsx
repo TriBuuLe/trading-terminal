@@ -7,7 +7,7 @@ import { parseOrderText } from "@/lib/palette-parse";
 import type { AssetHit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useUi, type View } from "@/stores/ui";
-import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command";
+import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command";
 
 function useDebounced<T>(value: T, ms = 150): T {
   const [v, setV] = useState(value);
@@ -122,9 +122,10 @@ export function CommandPalette() {
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen} title="Command palette" description="Search tickers, navigate, or type an order">
+      <Command shouldFilter={false}>
       <CommandInput value={q} onValueChange={setQ} placeholder='Ticker, command, or order (e.g. "buy 10 AAPL limit 180")' />
       <CommandList>
-        <CommandEmpty>{res.isFetching ? "Searching…" : "No results."}</CommandEmpty>
+        <CommandEmpty>{res.isFetching ? "Searching…" : res.isError ? res.error.message : "No results."}</CommandEmpty>
         {parsed && (
           <CommandGroup heading="Order (opens a filled ticket to review)">
             <CommandItem
@@ -168,7 +169,7 @@ export function CommandPalette() {
         )}
         {!parsed && (
           <CommandGroup heading="Go to">
-            {VIEWS.map((v) => (
+            {VIEWS.filter((v) => !q.trim() || v.label.toLowerCase().includes(q.trim().toLowerCase())).map((v) => (
               <CommandItem
                 key={v.view}
                 value={`view ${v.label}`}
@@ -184,6 +185,7 @@ export function CommandPalette() {
           </CommandGroup>
         )}
       </CommandList>
+      </Command>
     </CommandDialog>
   );
 }

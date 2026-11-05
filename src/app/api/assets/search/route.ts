@@ -18,14 +18,16 @@ export const GET = route(async (req) => {
   const like = `${q.replace(/[%_\\]/g, "\\$&")}%`;
   const contains = `%${q.replace(/[%_\\]/g, "\\$&")}%`;
   const rows = await db().execute<AssetHit & { rank: number } & Record<string, unknown>>(sql`
-    select symbol, name, exchange, fractionable, shortable, tradable,
-      case when symbol = ${q} then 0
-           when symbol like ${like} then 1
-           when upper(name) like ${like} then 2
-           else 3 end as rank
-    from assets
-    where tradable and exchange <> 'OTC'
-      and (symbol like ${like} or upper(name) like ${contains})
+    select * from (
+      select symbol, name, exchange, fractionable, shortable, tradable,
+        case when symbol = ${q} then 0
+             when symbol like ${like} then 1
+             when upper(name) like ${like} then 2
+             else 3 end as rank
+      from assets
+      where tradable and exchange <> 'OTC'
+        and (symbol like ${like} or upper(name) like ${contains})
+    ) hits
     order by rank, case when rank <= 1 then length(symbol) else length(name) end, symbol
     limit 12`);
   return Response.json(rows.map(({ rank: _rank, ...r }) => r));

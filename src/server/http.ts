@@ -155,5 +155,11 @@ export function errorResponse(e: unknown): Response {
     return Response.json({ error: e.message, problems: e.problems }, { status: e.status });
   }
   const msg = e instanceof Error ? e.message : String(e);
+  if (msg.startsWith("Failed query")) {
+    // Drizzle wraps DB errors with the full SQL; log it, show only the cause.
+    console.error(e);
+    const cause = e instanceof Error && e.cause instanceof Error ? e.cause.message : "query failed";
+    return Response.json({ error: `Database error: ${cause}` }, { status: 500 });
+  }
   return Response.json({ error: msg }, { status: 500 });
 }

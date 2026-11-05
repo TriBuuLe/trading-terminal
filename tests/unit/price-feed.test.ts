@@ -43,7 +43,7 @@ afterEach(() => {
 
 function makeFeed(session: MarketStatus["session"] | (() => never)) {
   const statuses: FeedStatus[] = [];
-  const fetcher = vi.fn(async () => {
+  const fetcher = vi.fn(async (_symbols: string[], _signal: AbortSignal) => {
     if (typeof session === "function") return session();
     return resp(session);
   });
@@ -69,7 +69,7 @@ describe("PollingPriceFeed", () => {
     // 1 immediate + one per 3s ≈ 21 calls/min: one batched upstream call each.
     expect(fetcher.mock.calls.length).toBeGreaterThanOrEqual(20);
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(21);
-    expect(fetcher.mock.calls[0]![0]).toEqual(["AAPL", "SPY"]);
+    expect((fetcher.mock.calls[0] as unknown[])[0]).toEqual(["AAPL", "SPY"]);
     feed.stop();
   });
 

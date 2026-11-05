@@ -6,12 +6,13 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
-import { CATEGORY_RULES, flipSigns, type ParsedTx } from "@/lib/planner/csv";
+import { TRANSACTION_CATEGORIES } from "@/lib/planner/categories";
+import { flipSigns, type ParsedTx } from "@/lib/planner/csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows, Tag } from "../terminal/bits";
 
-const CATEGORIES = [...new Set([...CATEGORY_RULES.map(([c]) => c), "Other", "Uncategorized"])];
+const CATEGORIES = TRANSACTION_CATEGORIES;
 
 interface StoredTx {
   id: number;

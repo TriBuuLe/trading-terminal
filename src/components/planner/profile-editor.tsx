@@ -3,6 +3,8 @@
 import { Plus, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useNow } from "@/hooks/use-now";
+import { SPENDING_CATEGORIES, SPENDING_CATEGORY_NAMES, defaultKind } from "@/lib/planner/categories";
+import { matchPlanCategory } from "@/lib/planner/spending";
 import { addMonths, averageIncome, incomeInMonth, monthlyEquivalent, overrideWarning, riskScore } from "@/lib/planner/core";
 import { derivedTaxFacts, netIncome } from "@/lib/planner/net";
 import { TAX_YEARS } from "@/lib/tax/rules";
@@ -290,33 +292,42 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
   );
 }
 
-const COMMON_EXPENSES: [string, "need" | "want"][] = [
-  ["Rent", "need"],
-  ["Groceries", "need"],
-  ["Phone & internet", "need"],
-  ["Transportation", "need"],
-  ["Utilities", "need"],
-  ["Insurance", "need"],
-  ["Dining out", "want"],
-  ["Subscriptions", "want"],
-  ["Shopping", "want"],
-  ["Travel", "want"],
-  ["Fun", "want"],
-];
+/** Budget-line category: a fixed list, the same one transactions use. An older free-text name stays selectable until you pick a standard one. */
+function CategoryPicker({ value, onChange }: { value: string; onChange: (v: string, kind: "need" | "want") => void }) {
+  const custom = !SPENDING_CATEGORY_NAMES.includes(value);
+  const suggestion = custom ? SPENDING_CATEGORY_NAMES.find((c) => matchPlanCategory(c, [value]) === value) : undefined;
+  return (
+    <>
+      <select aria-label="Category" className={cn(inp, "w-40", custom && "border-amber-500/60")} value={value} onChange={(ev) => onChange(ev.target.value, defaultKind(ev.target.value))}>
+        {custom && <option value={value}>{value} (old name)</option>}
+        {SPENDING_CATEGORIES.map((c) => (
+          <option key={c.name} value={c.name}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      {custom && (
+        <button type="button" className="text-[10px] text-amber-300 hover:underline" onClick={() => suggestion && onChange(suggestion, defaultKind(suggestion))} disabled={!suggestion} title="Pick a category from the list so this line matches your transactions">
+          {suggestion ? `use ${suggestion}?` : "pick a category"}
+        </button>
+      )}
+    </>
+  );
+}
 
 export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
   const upd = (id: string, patch: Partial<Profile["expenses"][number]>) => set((x) => ({ ...x, expenses: x.expenses.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
-  const missing = COMMON_EXPENSES.filter(([c]) => !p.expenses.some((e) => e.category.toLowerCase() === c.toLowerCase()));
+  const missing = SPENDING_CATEGORIES.filter((c) => c.name !== "Other" && !p.expenses.some((e) => e.category === c.name));
   return (
     <Section
       title="Monthly spending"
-      hint="Needs = must pay; wants = could cut. Leave the dates blank for every month. When an amount changes (a new lease, cheaper summer groceries), give each period its own line with the same category and its own dates; “+ next period” does that. Your real spending is under Analysis."
+      hint="Categories come from one fixed list, the same one your transactions use, so each line lines up with its spending. Needs = must pay; wants = could cut. Leave the dates blank for every month. When an amount changes (a new lease, cheaper summer groceries), give each period its own line with the same category and its own dates; “+ next period” does that. Your real spending is under Analysis."
       onAdd={() => set((x) => ({ ...x, expenses: [...x.expenses, { id: uid(), category: "Other", monthly: 0, kind: "want" }] }))}
     >
       <div className="space-y-1.5">
         {p.expenses.map((e) => (
           <div key={e.id} className="flex flex-wrap items-center gap-2 text-xs">
-            <input aria-label="Category" className={cn(inp, "w-40")} value={e.category} onChange={(ev) => upd(e.id, { category: ev.target.value })} />
+            <CategoryPicker value={e.category} onChange={(category, kind) => upd(e.id, { category, kind })} />
             <Num label="Monthly amount" value={e.monthly} onChange={(n) => upd(e.id, { monthly: n })} />
             <select aria-label="Need or want" className={inp} value={e.kind} onChange={(ev) => upd(e.id, { kind: ev.target.value as "need" | "want" })}>
               <option value="need">need</option>
@@ -352,7 +363,7 @@ export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
       </div>
       {missing.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
-          {missing.map(([c, k]) => (
+          {missing.map(({ name: c, kind: k }) => (
             <button
               key={c}
               type="button"

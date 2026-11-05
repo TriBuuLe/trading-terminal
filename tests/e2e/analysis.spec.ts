@@ -13,6 +13,7 @@ test("analysis: take-home for the year, spending by category, needs attention", 
       { id: "r1", category: "Rent", monthly: 900, kind: "need", startMonth: `${y}-01`, endMonth: `${y}-04` },
       { id: "r2", category: "Rent", monthly: 1200, kind: "need", startMonth: `${y}-05`, endMonth: null },
       { id: "d", category: "Dining out", monthly: 150, kind: "want" },
+      { id: "f", category: "Fun", monthly: 40, kind: "want" }, // an old free-text name
     ],
     debts: [], accounts: [], goals: [],
     risk: { horizonYears: 10, drawdownReaction: 3, incomeStability: 2, experience: 1 },
@@ -50,6 +51,14 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await page.getByRole("button", { name: "Analysis", exact: true }).click();
     await expect(page.getByText(/Travel: \$420 .*no budget line/)).toBeVisible();
     await expect(page.getByText(/Transportation: \$607 .*no budget line/)).toBeVisible();
+
+    // My finances: budget categories are a dropdown from the shared list; an old name offers its standard one.
+    await page.getByRole("button", { name: "My finances", exact: true }).click();
+    await expect(page.getByRole("button", { name: "use Entertainment?" })).toBeVisible();
+    await page.getByRole("button", { name: "use Entertainment?" }).click();
+    await expect(page.getByRole("button", { name: "use Entertainment?" })).toHaveCount(0);
+    await page.getByText("Monthly spending").first().scrollIntoViewIfNeeded();
+    await page.screenshot({ path: "test-results/finances.png" });
   } finally {
     await request.delete("/api/finances/export");
   }

@@ -34,7 +34,7 @@ export const envSchema = z
       emptyToUndefined,
       z
         .string()
-        .default("gemini-3.8-flash,gemini-3.5-flash-lite")
+        .default("gemini-3.8-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-flash-latest,gemini-3.5-flash-lite")
         .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean)),
     ),
     OLLAMA_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().default("http://localhost:11434")),

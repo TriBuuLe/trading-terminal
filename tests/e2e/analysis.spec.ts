@@ -57,6 +57,10 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await expect(page.getByText("By merchant")).toBeVisible();
     await expect(page.getByRole("cell", { name: "Sushi", exact: true })).toBeVisible();
     await page.screenshot({ path: "test-results/analysis.png", fullPage: true });
+    // Assistant tab: without a Gemini key (demo/e2e) it says why it's unavailable instead of failing.
+    await page.getByRole("button", { name: "Assistant", exact: true }).click();
+    await expect(page.getByText("Assistant unavailable")).toBeVisible();
+    await expect(page.getByText(/GEMINI_API_KEY isn't set/)).toBeVisible();
     // Transactions is storage/import only now.
     await page.getByRole("button", { name: "Transactions", exact: true }).click();
     await expect(page.getByText("Import a bank or credit-card CSV")).toBeVisible();

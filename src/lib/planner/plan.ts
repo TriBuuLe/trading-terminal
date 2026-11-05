@@ -104,14 +104,15 @@ const CROSS_BORDER =
  * Build the whole plan. Deterministic given (profile, assumptions, asOf, seed).
  * Every number the AI advisor quotes must come from here.
  */
-export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { runs?: number; seed?: number } = {}): Plan {
+export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { runs?: number; seed?: number; monthlyIncome?: number } = {}): Plan {
   const runs = opts.runs ?? 5000;
   const seed = opts.seed ?? 42;
   // Take-home income: "before tax" lines are converted with the year's estimated taxes.
   // The calendar year (Jan–Dec of asOf's year), matching the year plan in My finances.
   const yearStart = `${asOf.slice(0, 4)}-01`;
   const net = netIncome(p, yearStart, 12);
-  const income = net.average;
+  // Received so far + still expected, ÷ 12 (from statements) when given; otherwise the income lines.
+  const income = opts.monthlyIncome ?? net.average;
   // Budget averaged over the calendar year (months can differ: rent changes, one-offs).
   const expenses = averageExpenses(p.expenses, yearStart, 12);
   const cf = cashFlow(income, expenses, p.debts);

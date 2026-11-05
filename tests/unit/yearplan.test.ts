@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Profile } from "@/lib/planner/types";
-import { budgetToExpenses, expectedIncome, fillFrom, longTermGoals, newYearPlan, plannedMonths, progress, spreadAnnual, type MonthActual, type YearPlan } from "@/lib/planner/yearplan";
+import { budgetToExpenses, fillFrom, longTermGoals, newYearPlan, plannedMonths, progress, spreadAnnual, type MonthActual, type YearPlan } from "@/lib/planner/yearplan";
 
 const profile: Profile = {
   country: "US", region: "NC", age: 21, crossBorder: false,
@@ -100,13 +100,5 @@ describe("long-term goals", () => {
     const [g] = longTermGoals(profile, plan, 3094.33, "2026-11-05");
     // Nov 2026 → Dec 2028 = 25 months; pace 700/month → 3,094.33 + 17,500 = 20,594.33; gap 29,405.67; needed (50,000 − 3,094.33) / 25 = 1,876.23
     expect(g).toMatchObject({ current: 3094.33, target: 50_000, monthsLeft: 25, pacePerMonth: 700, projected: 20_594.33, gap: 29_405.67, neededPerMonth: 1876.23 });
-  });
-});
-
-describe("expected take-home for the year", () => {
-  it("the whole year Jan–Dec from income lines; statements don't change it", () => {
-    const r = expectedIncome(2026, profile);
-    expect(r.months).toHaveLength(12);
-    expect(r.total).toBe(36_000); // 12 × 3,000
   });
 });

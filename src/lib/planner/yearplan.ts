@@ -239,18 +239,3 @@ export function longTermGoals(p: Profile, plan: YearPlan | null, netWorth: numbe
       };
     });
 }
-
-/**
- * Expected take-home for the whole calendar year (Jan–Dec), from your income
- * lines: the number the budget is planned against. Statements are compared with
- * it under My plan; they don't change it.
- */
-export interface ExpectedIncome {
-  months: { month: YearMonth; amount: number }[];
-  total: number;
-}
-
-export function expectedIncome(year: number, p: Profile): ExpectedIncome {
-  const months = netIncome(p, `${year}-01`, 12).byMonth.map((m) => ({ month: m.month, amount: round2(m.amount) }));
-  return { months, total: sum(months.map((m) => m.amount)) };
-}

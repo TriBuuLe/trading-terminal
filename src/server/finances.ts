@@ -8,7 +8,8 @@ import { buildPlan, type Plan } from "@/lib/planner/plan";
 import { analyzeSpending, type SpendingAnalysis } from "@/lib/planner/spending";
 import { yearSummary, type YearSummary } from "@/lib/planner/summary";
 import { creditPaychecks, ensureYearPlan, noteBalanceEdit, syncPayDates, withPlanExpenses } from "@/lib/planner/sync";
-import { expectedIncome, longTermGoals, plannedMonths, progress, type MonthActual } from "@/lib/planner/yearplan";
+import { longTermGoals, plannedMonths, progress, type MonthActual } from "@/lib/planner/yearplan";
+import { yearIncome } from "@/lib/planner/received";
 import { suggestCategory, type MyRules } from "@/lib/planner/csv";
 import { assumptionsSchema, profileSchema } from "@/lib/planner/schema";
 import type { Assumptions, Profile } from "@/lib/planner/types";
@@ -167,10 +168,16 @@ export async function getPlan(opts: { profile?: Profile; runs?: number } = {}): 
   const hasActual = spending.completeMonths.length > 0;
   const basis = profile.budgetBasis === "actual" && hasActual ? "actual" : "planned";
   const withActual = { ...profile, expenses: spending.actualBasisExpenses };
-  const plan = buildPlan(basis === "actual" ? withActual : profile, assumptions, thisMonth(), { runs: opts.runs ?? 5000 });
+  const today = etParts(new Date()).date;
+  const year = Number(today.slice(0, 4));
+  const txs = await listTransactions();
+  const s = yearSummary({ profile, txs, year, today });
+  const status = new Map(s.months.map((m) => [m.month, m.status]));
+  const monthlyIncome = Math.round((yearIncome(profile, txs, year, (m) => status.get(m) ?? "none").total / 12) * 100) / 100;
+  const plan = buildPlan(basis === "actual" ? withActual : profile, assumptions, thisMonth(), { runs: opts.runs ?? 5000, monthlyIncome });
   let alternate: PlanResult["alternate"] = null;
   if (hasActual) {
-    const other = buildPlan(basis === "actual" ? profile : withActual, assumptions, thisMonth(), { runs: 1000 });
+    const other = buildPlan(basis === "actual" ? profile : withActual, assumptions, thisMonth(), { runs: 1000, monthlyIncome });
     alternate = {
       basis: basis === "actual" ? "planned" : "actual",
       available: other.cashFlow.available,
@@ -390,7 +397,15 @@ export async function getYearProgress(year: number) {
     plan,
     planned: plan ? plannedMonths(plan, profile) : null,
     progress: plan ? progress(plan, profile, actuals, today) : null,
-    expectedIncome: expectedIncome(year, profile),
+    income: yearIncome(profile, txs, year, (m) => s.months.find((x) => x.month === m)?.status ?? "none"),
+    // Actual spending per category and month (complete statement months only), for "so far" in the budget
+    actualSpend: Object.fromEntries(
+      s.categories.map((c) => [
+        c.category,
+        s.months.map((m) => (m.status === "full" ? Math.round(c.txs.filter((x) => x.date.startsWith(m.month)).reduce((t, x) => t + x.amount, 0) * 100) / 100 : null)),
+      ]),
+    ),
+    soFar: { months: s.fullMonths, received: s.income.actual, spent: s.spending.actual, invested: s.investments.year.net, saved: s.saved.actual },
     longTerm: longTermGoals(profile, profile.yearPlans?.[today.slice(0, 4)] ?? plan, netWorth, today),
     netWorth: Math.round(netWorth * 100) / 100,
     years: Object.keys(profile.yearPlans ?? {}).sort(),

@@ -63,7 +63,17 @@ export async function financeContext() {
       investMonths: plan.invest,
       decemberGoals: y?.progress?.goals,
     },
-    expectedTakeHome: y?.expectedIncome && { total: y.expectedIncome.total, note: "whole year Jan–Dec from income lines; the budget is planned against this", byMonth: y.expectedIncome.months },
+    yearIncome: y?.income && {
+      note: "received = every deposit marked Income this year (from statements); stillExpected = paychecks/payments after the last statement; total = received + stillExpected",
+      coveredThrough: y.income.coveredThrough,
+      received: y.income.received,
+      stillExpected: y.income.ahead,
+      total: y.income.total,
+      byLine: y.income.lines.map((l) => ({ name: l.name, received: l.received, stillExpected: l.ahead, total: l.total, flag: l.flag })),
+      otherMoneyIn: y.income.other,
+      missingStatements: y.income.missing,
+    },
+    soFar: y?.soFar,
     plannedByMonth: y?.planned?.map((m) => ({ month: m.month, takeHome: r2(m.income), spending: r2(m.spending), save: m.save, invest: m.invest, unassigned: r2(m.unassigned) })),
     planVsStatements: y?.progress && {
       months: y.progress.months.map((m) => ({ month: m.month, status: m.status, actual: m.actual })),
@@ -105,7 +115,7 @@ Identity:
 Honesty:
 - If something isn't in CONTEXT, say you don't have it. Don't guess, don't fill gaps.
 - Planned income = CONTEXT.plannedByMonth / incomeLines (what the plan expects). Received income = CONTEXT.statements.incomeSources (deposits). Say which one you mean.
-- For budgeting the year, use CONTEXT.expectedTakeHome.total: the whole year's expected take-home (Jan–Dec) from the income lines.
+- Income for the year = CONTEXT.yearIncome.total (received + stillExpected). Money for the rest of the year = CONTEXT.yearIncome.stillExpected. What's been saved so far = CONTEXT.soFar.saved. Never budget past months again.
 - Only write "a × b = c" when it's exactly true. A total of several different deposits is a sum, not latest amount × count.
 
 Rules:

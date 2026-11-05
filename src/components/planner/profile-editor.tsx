@@ -7,7 +7,7 @@ import { useNow } from "@/hooks/use-now";
 import { api } from "@/lib/api";
 import { SPENDING_CATEGORIES, SPENDING_CATEGORY_NAMES, defaultKind } from "@/lib/planner/categories";
 import { matchPlanCategory } from "@/lib/planner/spending";
-import { addMonths, incomeInMonth, isActive, nextPaycheck, overrideWarning, paychecks, riskScore, round2 } from "@/lib/planner/core";
+import { addMonths, isActive, nextPaycheck, overrideWarning, paychecks, riskScore, round2 } from "@/lib/planner/core";
 import { proposeWants } from "@/lib/planner/propose";
 import { lineMatchesPattern, matchIncomeLine, WEEKDAYS, type PayPattern } from "@/lib/planner/paychecks";
 import { derivedTaxFacts, netIncome } from "@/lib/planner/net";
@@ -15,7 +15,8 @@ import { TAX_YEARS } from "@/lib/tax/rules";
 import type { YearTax } from "@/lib/tax/calc";
 import type { YearSummary } from "@/lib/planner/summary";
 import type { AccountType, Profile } from "@/lib/planner/types";
-import { addBudgetRow, expectedIncome, fillFrom, newYearPlan, plannedMonths, spreadAnnual, sum, type YearPlan } from "@/lib/planner/yearplan";
+import { aheadFor, type YearIncome } from "@/lib/planner/received";
+import { addBudgetRow, newYearPlan, type YearPlan } from "@/lib/planner/yearplan";
 import { setAhead } from "@/lib/ai/actions";
 import { cn } from "@/lib/utils";
 
@@ -208,29 +209,23 @@ function scheduleText(i: Profile["incomes"][number]): string {
 }
 
 /** One income line: a summary row; ▸ opens the editor. */
-function IncomeLine({ i, year, p, pattern, upd, remove, applyPattern }: {
+function IncomeLine({ i, year, p, pattern, got, coveredThrough, upd, remove, applyPattern }: {
   i: Profile["incomes"][number];
   year: number;
   p: Profile;
   pattern: PayPattern | null;
+  got: { received: number; deposits: number; estimated: number; estimatedDates: string[]; flag: string | null } | null;
+  coveredThrough: string | null;
   upd: (patch: Partial<Profile["incomes"][number]>) => void;
   remove: () => void;
   applyPattern: (() => void) | null;
 }) {
   const [open, setOpen] = useState(!i.name || i.amount === 0);
-  const months = Array.from({ length: 12 }, (_, k) => `${year}-${String(k + 1).padStart(2, "0")}`);
-  const total = months.reduce((s, m) => s + incomeInMonth([i], m), 0);
   const checks = scheduled(i) ? paychecks(i, `${year}-01-01`, `${year}-12-31`) : [];
-  const active = months.filter((m) => incomeInMonth([i], m) > 0);
-  const span = scheduled(i)
-    ? checks.length
-      ? `${shortDate(checks[0]!.date)} → ${shortDate(checks.at(-1)!.date)} · ${checks.length} checks`
-      : "no paychecks this year"
-    : i.frequency === "once"
-      ? ""
-      : active.length
-        ? `${MONTH_ABBR[Number(active[0]!.slice(5)) - 1]}–${MONTH_ABBR[Number(active.at(-1)!.slice(5)) - 1]}`
-        : "not this year";
+  // Still expected = this line's paychecks / payments after your last statement (recomputed as you edit)
+  const ahead = aheadFor(i, coveredThrough, year);
+  const received = got?.received ?? 0;
+  const estimated = got?.estimated ?? 0;
   const next = scheduled(i) ? nextPaycheck([i], new Date().toISOString().slice(0, 10)) : null;
   const date = (label: string, key: "employmentStart" | "employmentEnd" | "firstPayDate" | "lastPayDate") => (
     <Field label={label}>
@@ -240,7 +235,7 @@ function IncomeLine({ i, year, p, pattern, upd, remove, applyPattern }: {
   const days = i.workdays?.length ? i.workdays : [1, 2, 3, 4, 5];
   return (
     <div className="border-t border-border/50 first:border-t-0">
-      <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_minmax(8rem,1.2fr)_6.5rem_auto] items-center gap-2 py-1.5 text-xs">
+      <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] items-center gap-2 py-1.5 text-xs">
         <button type="button" aria-expanded={open} aria-label={`Edit ${i.name}`} onClick={() => setOpen(!open)} className="text-muted-foreground hover:text-foreground">
           {open ? "▾" : "▸"}
         </button>
@@ -250,22 +245,16 @@ function IncomeLine({ i, year, p, pattern, upd, remove, applyPattern }: {
         </span>
         <span className="num truncate">
           {scheduleText(i)}
-          {i.basis === "gross" && <span className="text-muted-foreground"> before tax</span>}
+          {i.basis === "gross" && <span className="text-muted-foreground"> pre-tax</span>}
         </span>
-        <span className="num truncate text-[11px] text-muted-foreground">{span}</span>
-        <span className="num text-right font-medium">{usd(total)}</span>
+        <span className="num text-right" title={got?.deposits ? `${got.deposits} deposits` : undefined}>
+          {received ? usd(received) : "—"}
+        </span>
+        <span className="num text-right" title={ahead.count ? `${ahead.count} after ${coveredThrough ?? "today"}` : undefined}>
+          {ahead.amount ? usd(ahead.amount) : "—"}
+        </span>
+        <span className="num text-right font-medium">{usd(received + estimated + ahead.amount)}</span>
         <span className="flex items-center justify-end gap-1.5 text-[10px]">
-          {pattern && !applyPattern && <span className="rounded bg-up-muted px-1 text-up" title={`Matches ${pattern.count} payroll deposits from ${pattern.employer}`}>deposits ✓</span>}
-          {pattern && i.frequency !== "hourly" && Math.abs(pattern.average - i.amount) > Math.max(1, i.amount * 0.05) && (
-            <button
-              type="button"
-              className="rounded border border-amber-500/50 px-1 text-amber-300 hover:bg-amber-500/10"
-              title={`${pattern.count} deposits from ${pattern.employer} averaged ${usd(pattern.average)} (latest ${usd(pattern.amount)}); this line uses ${usd(i.amount)}. Click to use the average.`}
-              onClick={() => upd({ amount: pattern.average })}
-            >
-              deposits avg {usd(pattern.average)} · use
-            </button>
-          )}
           {applyPattern && (
             <button type="button" className="rounded border border-series-1/40 px-1 text-series-1 hover:bg-series-1/10" onClick={applyPattern} title={`${pattern!.employer}: ${usd(pattern!.amount)} ${pattern!.frequency}, ${pattern!.count} deposits ${pattern!.first} → ${pattern!.last}`}>
               use deposits
@@ -273,7 +262,18 @@ function IncomeLine({ i, year, p, pattern, upd, remove, applyPattern }: {
           )}
         </span>
       </div>
-      {next && !open && <p className="num -mt-1 pb-1 pl-6 text-[10px] text-muted-foreground">next expected {shortDate(next.date)} · {usd(next.amount)}</p>}
+      {got?.flag && <p className="-mt-1 pb-1 pl-6 text-[10px] text-amber-300">{got.flag}</p>}
+      {estimated > 0 && (
+        <p className="num -mt-1 pb-1 pl-6 text-[10px] text-amber-300">
+          + {usd(estimated)} estimated: {got!.estimatedDates.map(shortDate).join(", ")} paychecks aren&apos;t in your statements (import them to replace the estimate)
+        </p>
+      )}
+      {!got?.flag && next && !open && (
+        <p className="num -mt-1 pb-1 pl-6 text-[10px] text-muted-foreground">
+          next expected {shortDate(next.date)} · {usd(next.amount)}
+          {checks.length > 0 && <> · {year}: {checks.length} paychecks {shortDate(checks[0]!.date)} → {shortDate(checks.at(-1)!.date)}</>}
+        </p>
+      )}
       {open && (
         <div className="mb-2 ml-6 space-y-2 rounded-md bg-background/60 p-2">
           <div className="flex flex-wrap items-end gap-2">
@@ -406,7 +406,7 @@ function IncomeLine({ i, year, p, pattern, upd, remove, applyPattern }: {
           )}
           {scheduled(i) && (
             <p className="num text-[10px] text-muted-foreground">
-              {year}: {checks.length} paychecks · {usd(total)}
+              {year}: {checks.length} paychecks · received {usd(received)} + still expected {usd(ahead.amount)}
               {next && <> · next expected {shortDate(next.date)}, {usd(next.amount)}</>}
             </p>
           )}
@@ -420,8 +420,12 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
   const updAt = (id: string) => (patch: Partial<Profile["incomes"][number]>) => set((x) => ({ ...x, incomes: x.incomes.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
   const year = Number(ymOf(useNow(60 * 60_000)).slice(0, 4));
   const net = netIncome(p, `${year}-01`, 12);
-  const linesTotal = net.byMonth.reduce((s, m) => s + m.amount, 0);
   const pays = useQuery({ queryKey: ["paychecks"], queryFn: () => api<PayPattern[]>("/api/finances/paychecks") });
+  const yr = useQuery({ queryKey: ["year"], queryFn: () => api<{ income: YearIncome } | null>("/api/finances/year") });
+  const inc = yr.data?.income ?? null;
+  const covered = inc?.coveredThrough ?? null;
+  const gotFor = (id: string) => inc?.lines.find((l) => l.id === id) ?? null;
+  const aheadTotal = p.incomes.reduce((t, i) => t + aheadFor(i, covered, year).amount, 0);
   const patternFor = (id: string) => (pays.data ?? []).find((x) => matchIncomeLine(x, p.incomes)?.id === id) ?? null;
   const unmatched = (pays.data ?? []).filter((x) => !matchIncomeLine(x, p.incomes));
   const apply = (x: PayPattern, line: Profile["incomes"][number] | null) =>
@@ -439,12 +443,13 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
       onAdd={() => set((x) => ({ ...x, incomes: [...x.incomes, { id: uid(), name: "", amount: 0, frequency: "weekly", kind: "salary", basis: "net", payDay: 5, employmentStart: null, firstPayDate: null }] }))}
     >
       {p.incomes.length === 0 && <p className="text-[11px] text-muted-foreground">No income yet.</p>}
-      <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_minmax(8rem,1.2fr)_6.5rem_auto] gap-2 pb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
+      <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] gap-2 pb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
         <span />
         <span>Income</span>
         <span>Pay</span>
-        <span>{year}</span>
-        <span className="text-right">{year} total</span>
+        <span className="text-right" title="Deposits in your statements this year">Received</span>
+        <span className="text-right" title={covered ? `Paychecks after your last statement (${covered})` : "Paychecks still to come"}>Still expected</span>
+        <span className="text-right">{year}</span>
         <span />
       </div>
       {p.incomes.map((i) => {
@@ -456,12 +461,25 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
             year={year}
             p={p}
             pattern={pt}
+            got={gotFor(i.id)}
+            coveredThrough={covered}
             upd={updAt(i.id)}
             remove={() => set((x) => ({ ...x, incomes: x.incomes.filter((y) => y.id !== i.id) }))}
             applyPattern={pt && !lineMatchesPattern(i, pt) ? () => apply(pt, i) : null}
           />
         );
       })}
+      {inc && inc.other.received > 0 && (
+        <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] items-center gap-2 border-t border-border/50 py-1.5 text-xs" title={inc.other.sources.map((x) => `${x.label} ${usd(x.total)}`).join(" · ")}>
+          <span />
+          <span className="text-muted-foreground">Other money in</span>
+          <span className="truncate text-[11px] text-muted-foreground">{inc.other.sources.map((x) => x.label).join(", ")}</span>
+          <span className="num text-right">{usd(inc.other.received)}</span>
+          <span className="num text-right">—</span>
+          <span className="num text-right font-medium">{usd(inc.other.received)}</span>
+          <span />
+        </div>
+      )}
       {unmatched.length > 0 && (
         <div className="mt-1 space-y-0.5 border-t border-border/50 pt-1.5 text-[11px] text-muted-foreground">
           {unmatched.map((x) => (
@@ -485,11 +503,16 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
         </ul>
       )}
       {p.incomes.length > 0 && (
-        <div className="num mt-2 flex items-baseline justify-between border-t border-border pt-2 text-xs">
-          <span>
-            {year} expected take-home <span className="text-[11px] text-muted-foreground">(Jan–Dec, all lines)</span>
+        <div className="grid grid-cols-[1rem_minmax(7rem,1fr)_minmax(9rem,1.3fr)_6.5rem_6.5rem_6.5rem_4.5rem] items-baseline gap-2 border-t border-border pt-2 text-xs font-medium">
+          <span />
+          <span>{year} take-home</span>
+          <span className="text-[10px] font-normal text-muted-foreground">{covered ? `statements through ${shortDate(covered)}` : "no statements yet"}</span>
+          <span className="num text-right" title={inc?.estimated ? `+ ${usd(inc.estimated)} estimated for paychecks missing from your statements` : undefined}>
+            {inc ? usd(inc.received + inc.estimated) : "—"}
           </span>
-          <b>{usd(linesTotal)}</b>
+          <span className="num text-right">{usd(aheadTotal)}</span>
+          <span className="num text-right">{usd((inc?.received ?? 0) + (inc?.estimated ?? 0) + aheadTotal)}</span>
+          <span />
         </div>
       )}
     </Section>
@@ -610,22 +633,40 @@ export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const cell = "num h-6 w-full min-w-0 rounded border border-input bg-background px-1 text-right text-[11px] outline-none focus:border-ring";
 const whole0 = (x: number) => `$${Math.round(x).toLocaleString("en-US")}`;
+const BGRID = "grid grid-cols-[minmax(10rem,1fr)_7.5rem_6.5rem_6rem_6rem]";
 
-/** The 12 month boxes under an expanded row; "→" copies a month into the rest of the year. */
-function MonthStrip({ label, months, onChange }: { label: string; months: number[]; onChange: (m: number[]) => void }) {
+interface YearData {
+  income: YearIncome;
+  actualSpend: Record<string, (number | null)[]>;
+  soFar: { months: string[]; received: number; spent: number; invested: number; saved: number };
+  progress: { remaining: { months: string[] } } | null;
+  longTerm: { neededPerMonth: number }[];
+}
+
+/** A row's months: actual for months with a complete statement, inputs for the others. */
+function MonthStrip({ label, months, actual, full, onChange }: { label: string; months: number[]; actual: (number | null)[] | null; full: boolean[]; onChange: ((m: number[]) => void) | null }) {
   return (
     <div className="grid grid-cols-6 gap-1.5 py-1.5 pl-6 @3xl:grid-cols-12">
       {months.map((v, k) => (
         <label key={k} className="group relative flex flex-col gap-0.5 text-[10px] text-muted-foreground">
           <span className="flex justify-between">
             {MONTH_ABBR[k]}
-            {k < 11 && (
-              <button type="button" tabIndex={-1} title="Copy to the rest of the year" aria-label={`${label} ${MONTH_ABBR[k]}: copy to the rest of the year`} onClick={() => onChange(fillFrom(months, k))} className="text-series-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
-                →
-              </button>
+            {full[k] ? (
+              <span className="text-[9px]">actual</span>
+            ) : (
+              onChange &&
+              k < 11 && (
+                <button type="button" tabIndex={-1} title="Copy to the rest of the year" aria-label={`${label} ${MONTH_ABBR[k]}: copy to the rest of the year`} onClick={() => onChange(months.map((x, j) => (j > k && !full[j] ? v : x)))} className="text-series-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+                  →
+                </button>
+              )
             )}
           </span>
-          <input aria-label={`${label} ${MONTH_ABBR[k]}`} type="number" min={0} step={1} className={cell} value={Number.isFinite(v) ? v : 0} onChange={(e) => onChange(months.map((x, j) => (j === k ? Number(e.target.value) || 0 : x)))} />
+          {full[k] || !onChange ? (
+            <span className="num h-6 px-1 text-right text-[11px] leading-6 text-foreground">{full[k] ? whole0(actual?.[k] ?? 0) : whole0(v)}</span>
+          ) : (
+            <input aria-label={`${label} ${MONTH_ABBR[k]}`} type="number" min={0} step={1} className={cell} value={Number.isFinite(v) ? v : 0} onChange={(e) => onChange(months.map((x, j) => (j === k ? Number(e.target.value) || 0 : x)))} />
+          )}
         </label>
       ))}
     </div>
@@ -633,90 +674,106 @@ function MonthStrip({ label, months, onChange }: { label: string; months: number
 }
 
 /**
- * The calendar-year budget and savings plan. One line per category (annual budget,
- * monthly average, statement estimate, and for wants a proposed budget); ▸ opens
- * its 12 month boxes. Statements are compared against this plan under My plan and never change it.
+ * The whole year's plan, from expected take-home: per category the 2026 amount =
+ * actual spending in months with a complete statement + your budget for every other
+ * month. Editing a 2026 amount changes the months still ahead. Take-home − spending =
+ * what you'll save and invest this year.
  */
 export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
   const year = Number(ymOf(useNow(60 * 60_000)).slice(0, 4));
   const [openRows, setOpenRows] = useState<string[]>([]);
   const toggle = (k: string) => setOpenRows((o) => (o.includes(k) ? o.filter((x) => x !== k) : [...o, k]));
-  const open = { has: (k: string) => openRows.includes(k) };
   const plan = p.yearPlans?.[String(year)] ?? newYearPlan(p, year, new Date().toISOString().slice(0, 10));
   const setPlan = (fn: (pl: YearPlan) => YearPlan) => set((x) => ({ ...x, yearPlans: { ...(x.yearPlans ?? {}), [String(year)]: fn(x.yearPlans?.[String(year)] ?? plan) } }));
   const setRow = (cat: string, months: number[]) => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r) => (r.category === cat ? { ...r, months } : r)) }));
-  // Statements: average of full months (an estimate when × 12, not actual annual spending).
+
+  const yq = useQuery({ queryKey: ["year"], queryFn: () => api<YearData | null>("/api/finances/year") });
   const actual = useQuery({ queryKey: ["summary", year], queryFn: () => api<{ summary: YearSummary | null }>(`/api/finances/summary?year=${year}`) });
+  const y = yq.data;
   const s = actual.data?.summary;
-  // The budget is planned against the whole year's expected take-home (Jan–Dec, income lines).
-  const exp = expectedIncome(year, p);
-  const planned = plannedMonths(plan, p).map((m, k) => ({ ...m, income: exp.months[k]!.amount, unassigned: round2(exp.months[k]!.amount - m.spending - m.save - m.invest) }));
-  const income = exp.total;
-  const spending = sum(planned.map((m) => m.spending));
-  const unassigned = sum(planned.map((m) => m.unassigned));
-  const range = s?.fullMonths.length ? `${MONTH_ABBR[Number(s.fullMonths[0]!.slice(5)) - 1]}–${MONTH_ABBR[Number(s.fullMonths.at(-1)!.slice(5)) - 1]} (${s.fullMonths.length} full months)` : "";
-  const avgOf = (cat: string) => s?.categories.find((c) => c.category === cat)?.avgPerMonth ?? null;
-  // Long-term goals' pace needed, for the savings target behind the wants proposal.
-  const yq = useQuery({ queryKey: ["year"], queryFn: () => api<{ longTerm: { neededPerMonth: number }[]; progress: { remaining: { months: string[] } } | null } | null>("/api/finances/year") });
-  // Proposals change only the months still ahead; months with statements keep the plan you set.
-  const firstAhead = yq.data?.progress?.remaining.months[0];
+  const full = Array.from({ length: 12 }, (_, k) => (y?.soFar.months ?? []).includes(`${year}-${String(k + 1).padStart(2, "0")}`));
+  // Months still ahead (editable from the 2026 column): after the last complete statement
+  const firstAhead = y?.progress?.remaining.months[0];
   const openFrom = firstAhead ? Number(firstAhead.slice(5, 7)) - 1 : 0;
-  const aheadLabel = openFrom > 0 ? `${MONTH_ABBR[openFrom]}–Dec` : "all year";
-  const proposedMonths = (months: number[], annual: number) => (openFrom > 0 ? setAhead(months, round2(annual / 12), openFrom) : spreadAnnual(annual));
-  const goalsNeedYear = round2((yq.data?.longTerm ?? []).reduce((t, g) => t + g.neededPerMonth, 0) * 12);
+  const n = 12 - openFrom;
+
+  const actualOf = (cat: string) => y?.actualSpend[cat] ?? Array.from({ length: 12 }, () => null);
+  const yearOfRow = (months: number[], act: (number | null)[]) => round2(months.reduce((t, v, k) => t + (full[k] ? (act[k] ?? 0) : v), 0));
+  const soFarOfRow = (act: (number | null)[]) => round2(act.reduce<number>((t, v, k) => t + (full[k] ? (v ?? 0) : 0), 0));
+  // Edit the 2026 amount: months already fixed stay, the months ahead share the rest
+  const setYear = (months: number[], act: (number | null)[], v: number) => {
+    const fixed = months.reduce((t, x, k) => t + (k < openFrom ? (full[k] ? (act[k] ?? 0) : x) : 0), 0);
+    const each = n ? Math.max(0, Math.round(((v - fixed) / n) * 100) / 100) : 0;
+    return months.map((x, k) => (k >= openFrom ? each : x));
+  };
+
+  const covered = y?.income.coveredThrough ?? null;
+  const incomeAhead = round2(p.incomes.reduce((t, i) => t + aheadFor(i, covered, year).amount, 0));
+  const takeHome = round2((y?.income.received ?? 0) + (y?.income.estimated ?? 0) + incomeAhead);
+  // Spending in categories with no budget row still happened: count it (so far = the year, nothing planned)
+  const unbudgeted = Object.keys(y?.actualSpend ?? {}).filter((c) => !plan.budget.some((r) => r.category === c) && soFarOfRow(actualOf(c)) !== 0);
+  const unbudgetedSoFar = round2(unbudgeted.reduce((t, c) => t + soFarOfRow(actualOf(c)), 0));
+  const spending = round2(plan.budget.reduce((t, r) => t + yearOfRow(r.months, actualOf(r.category)), 0) + unbudgetedSoFar);
+  const spentSoFar = round2(plan.budget.reduce((t, r) => t + soFarOfRow(actualOf(r.category)), 0) + unbudgetedSoFar);
+  const toSave = round2(takeHome - spending);
+  // Save / invest: what actually happened in complete months (cash kept / moved to investing), targets for the others
+  const investAct = s?.months.map((m) => m.invested) ?? [];
+  const saveAct = s?.months.map((m) => (m.income !== null && m.spent !== null ? round2(m.income - m.spent - (m.invested ?? 0)) : null)) ?? [];
+  const saveYear = yearOfRow(plan.save, saveAct);
+  const investYear = yearOfRow(plan.invest, investAct);
+  const unassigned = round2(toSave - saveYear - investYear);
+  const avgOf = (cat: string) => s?.categories.find((c) => c.category === cat)?.avgPerMonth ?? null;
+
+  // Proposed wants for the months ahead (per month)
+  const goalsNeedYear = round2((y?.longTerm ?? []).reduce((t, g) => t + g.neededPerMonth, 0) * 12);
   const debtYear = p.debts.reduce((t, d) => t + Math.min(d.minPayment, d.balance), 0) * 12;
-  const prop = proposeWants({ budget: plan.budget, income, debtMinimumsYear: debtYear, goalsNeedYear, statementAvg: avgOf });
-  const proposedOf = (cat: string) => prop.rows.find((r) => r.category === cat)?.proposed ?? null;
-  const applyProposal = () => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r) => (r.kind === "want" && proposedOf(r.category) !== null ? { ...r, months: proposedMonths(r.months, proposedOf(r.category)!) } : r)) }));
-
-  const missing = SPENDING_CATEGORIES.filter((c) => !plan.budget.some((r) => r.category === c.name)).sort((a, b) => (avgOf(b.name) ?? 0) - (avgOf(a.name) ?? 0));
+  const perMonthRows = plan.budget.map((r) => ({ ...r, months: Array.from({ length: 12 }, () => (n ? r.months.slice(openFrom).reduce((a, b) => a + b, 0) / n : 0)) }));
+  const prop = proposeWants({ budget: perMonthRows, income: n ? (incomeAhead / n) * 12 : 0, debtMinimumsYear: debtYear, goalsNeedYear, statementAvg: avgOf });
+  const proposedPerMonth = (cat: string) => {
+    const r = prop.rows.find((x) => x.category === cat);
+    return r ? Math.round(r.proposed / 12) : null;
+  };
+  const applyProposal = () => setPlan((pl) => ({ ...pl, budget: pl.budget.map((r) => (r.kind === "want" && proposedPerMonth(r.category) !== null ? { ...r, months: setAhead(r.months, proposedPerMonth(r.category)!, openFrom) } : r)) }));
+  const missing = SPENDING_CATEGORIES.filter((c) => !plan.budget.some((r) => r.category === c.name)).sort((a, b) => soFarOfRow(actualOf(b.name)) - soFarOfRow(actualOf(a.name)));
   const rows = [...plan.budget].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "need" ? -1 : 1));
+  const aheadLabel = openFrom > 0 ? `${MONTH_ABBR[openFrom]}–Dec` : "the year";
 
-  const line = (key: string, label: React.ReactNode, months: number[], onChange: ((m: number[]) => void) | null, extra: { est?: React.ReactNode; proposed?: React.ReactNode; tone?: string } = {}) => (
+  const line = (key: string, label: ReactNode, value: number, soFar: number | null, edit: { months: number[]; act: (number | null)[]; onChange: (m: number[]) => void } | null, extra: { avg?: number | null; proposed?: ReactNode; tone?: string; strong?: boolean } = {}) => (
     <div key={key} className="border-t border-border/50">
-      <div className="grid grid-cols-[minmax(10rem,1fr)_7rem_5.5rem_9rem_8rem] items-center gap-2 py-1 text-xs">
+      <div className={cn(BGRID, "items-center gap-2 py-1 text-xs")}>
         <div className="flex items-center gap-1">
-          <button type="button" aria-expanded={open.has(key)} aria-label={`Months for ${key}`} onClick={() => toggle(key)} className="w-4 text-muted-foreground hover:text-foreground">
-            {open.has(key) ? "▾" : "▸"}
-          </button>
+          {edit ? (
+            <button type="button" aria-expanded={openRows.includes(key)} aria-label={`Months for ${key}`} onClick={() => toggle(key)} className="w-4 text-muted-foreground hover:text-foreground">
+              {openRows.includes(key) ? "▾" : "▸"}
+            </button>
+          ) : (
+            <span className="w-4" />
+          )}
           {label}
         </div>
-        {onChange ? (
-          <input aria-label={`${key} annual`} type="number" min={0} className={cn(cell, "font-medium")} value={sum(months)} onChange={(e) => onChange(spreadAnnual(Number(e.target.value) || 0))} />
+        {edit ? (
+          <input aria-label={`${key} ${year}`} type="number" min={0} className={cn(cell, "font-medium")} value={Math.round(value)} onChange={(e) => edit.onChange(setYear(edit.months, edit.act, Number(e.target.value) || 0))} />
         ) : (
-          <span className={cn("num text-right font-medium", extra.tone)}>{whole0(sum(months))}</span>
+          <span className={cn("num text-right", extra.strong && "font-medium", extra.tone)}>{whole0(value)}</span>
         )}
-        <span className="num text-right text-muted-foreground">{whole0(sum(months) / 12)}/mo</span>
-        <span className="num text-right text-[11px] text-muted-foreground">{extra.est ?? ""}</span>
+        <span className="num text-right text-muted-foreground">{soFar === null ? "" : whole0(soFar)}</span>
+        <span className="num text-right text-[11px] text-muted-foreground">{extra.avg === undefined ? "" : extra.avg === null ? "—" : `${whole0(extra.avg)}/mo`}</span>
         <span className="num text-right text-[11px]">{extra.proposed ?? ""}</span>
       </div>
-      {open.has(key) &&
-        (onChange ? (
-          <MonthStrip label={key} months={months} onChange={onChange} />
-        ) : (
-          <div className="num grid grid-cols-6 gap-1.5 py-1 pl-6 text-[10px] text-muted-foreground @3xl:grid-cols-12">
-            {months.map((v, k) => (
-              <span key={k} className="text-right">
-                {MONTH_ABBR[k]} {whole0(v)}
-              </span>
-            ))}
-          </div>
-        ))}
+      {edit && openRows.includes(key) && <MonthStrip label={key} months={edit.months} actual={edit.act} full={full} onChange={edit.onChange} />}
     </div>
   );
 
   return (
-    <Section title={`${year} budget & savings plan`} hint="Annual budget per category; ▸ for each month. Edit the annual amount to spread it evenly; → copies a month into the rest of the year.">
-      <div className="grid grid-cols-[minmax(10rem,1fr)_7rem_5.5rem_9rem_8rem] gap-2 pb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
+    <Section title={`${year} plan`} hint={`From your expected ${year} take-home. Months with a complete statement use actual numbers; editing a ${year} amount changes ${aheadLabel}. ▸ for each month.`}>
+      <div className={cn(BGRID, "gap-2 pb-1 text-[10px] tracking-wider text-muted-foreground uppercase")}>
         <span className="pl-5">{year}</span>
-        <span className="text-right">Annual</span>
-        <span className="text-right">Avg</span>
-        <span className="text-right" title={`Average over ${range} × 12: an estimate`}>
-          Statements est.
-        </span>
-        <span className="text-right">Proposed</span>
+        <span className="text-right">{year} expected</span>
+        <span className="text-right">So far</span>
+        <span className="text-right">Avg so far</span>
+        <span className="text-right">Proposed /mo</span>
       </div>
-      {line("Take-home", <span className="text-muted-foreground" title="Whole year, Jan–Dec, from your income lines">Expected take-home (income lines)</span>, planned.map((m) => m.income), null)}
+      {line("Take-home", <span className="font-medium">Take-home</span>, takeHome, y?.income.received ?? null, null, { strong: true })}
       {rows.map((r) =>
         line(
           r.category,
@@ -734,54 +791,73 @@ export function YearBudgetSection({ p, set }: { p: Profile; set: Set }) {
               ×
             </button>
           </span>,
-          r.months,
-          (m) => setRow(r.category, m),
+          yearOfRow(r.months, actualOf(r.category)),
+          soFarOfRow(actualOf(r.category)),
+          { months: r.months, act: actualOf(r.category), onChange: (m) => setRow(r.category, m) },
           {
-            est: avgOf(r.category) !== null ? `${whole0(avgOf(r.category)!)} × 12 = ${whole0(avgOf(r.category)! * 12)}` : "—",
+            avg: avgOf(r.category),
             proposed:
-              r.kind === "want" && proposedOf(r.category) !== null ? (
-                <button type="button" className="text-series-1 hover:underline" title={`Use ${whole0(proposedOf(r.category)! / 12)}/mo for ${aheadLabel} (proposed ${whole0(proposedOf(r.category)!)}/yr ÷ 12)`} onClick={() => setRow(r.category, proposedMonths(r.months, proposedOf(r.category)!))}>
-                  {whole0(proposedOf(r.category)!)}
+              r.kind === "want" && proposedPerMonth(r.category) !== null ? (
+                <button type="button" className="text-series-1 hover:underline" title={`Use ${whole0(proposedPerMonth(r.category)!)}/mo for ${aheadLabel}`} onClick={() => setRow(r.category, setAhead(r.months, proposedPerMonth(r.category)!, openFrom))}>
+                  {whole0(proposedPerMonth(r.category)!)}
                 </button>
               ) : null,
           },
         ),
       )}
-      {line("Spending", <span className="font-medium">Spending</span>, planned.map((m) => m.spending), null)}
-      {line("Save (cash)", <span>Save (cash)</span>, plan.save, (m) => setPlan((pl) => ({ ...pl, save: m })))}
-      {line("Invest", <span>Invest</span>, plan.invest, (m) => setPlan((pl) => ({ ...pl, invest: m })))}
-      {line("Unassigned", <span className="text-muted-foreground">Unassigned</span>, planned.map((m) => m.unassigned), null, { tone: unassigned < 0 ? "text-down" : "text-muted-foreground" })}
+      {unbudgeted.length > 0 &&
+        line(
+          "Not budgeted",
+          <span className="text-amber-300" title="Spending in categories without a budget row (add one below, or re-categorize the transactions)">
+            Not budgeted <span className="text-[10px] text-muted-foreground">({unbudgeted.join(", ")})</span>
+          </span>,
+          unbudgetedSoFar,
+          unbudgetedSoFar,
+          null,
+        )}
+      {line("Spending", <span className="font-medium">Spending</span>, spending, spentSoFar, null, { strong: true })}
+      {line("Left to save and invest", <span className="font-medium">Left to save + invest</span>, toSave, null, null, { strong: true, tone: toSave < 0 ? "text-down" : "text-up" })}
+      {line("Save (cash)", <span>Save (cash)</span>, saveYear, null, { months: plan.save, act: saveAct, onChange: (m) => setPlan((pl) => ({ ...pl, save: m })) })}
+      {line("Invest", <span>Invest</span>, investYear, null, { months: plan.invest, act: investAct, onChange: (m) => setPlan((pl) => ({ ...pl, invest: m })) })}
+      {line("Unassigned", <span className="text-muted-foreground">Unassigned</span>, unassigned, null, null, { tone: unassigned < 0 ? "text-down" : "text-muted-foreground" })}
 
-      {prop.rows.length > 0 && (
-        <div className="num mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-background/60 px-2 py-1.5 text-[11px] text-muted-foreground">
+      <p className="num mt-2 border-t border-border pt-2 text-[11px] text-muted-foreground">
+        {whole0(takeHome)} take-home − {whole0(spending)} spending = <span className={toSave < 0 ? "text-down" : "text-foreground"}>{whole0(toSave)} to save + invest in {year}</span>
+        {Math.abs(unassigned) >= 1 && (
+          <>
+            {" "}
+            (save {whole0(saveYear)} + invest {whole0(investYear)},{" "}
+            <span className={unassigned < 0 ? "text-down" : ""}>
+              {unassigned < 0 ? `${whole0(-unassigned)} more than you'll have` : `${whole0(unassigned)} unassigned`}
+            </span>
+            )
+          </>
+        )}
+      </p>
+      {prop.rows.length > 0 && n > 0 && (
+        <div className="num mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
           <span>
-            Wants proposal: {whole0(prop.income)} take-home − {whole0(prop.needs)} needs{prop.debt > 0 && <> − {whole0(prop.debt)} debt</>} − {whole0(prop.savingsTarget)} savings target ({prop.savingsTargetSource}) ={" "}
-            {whole0(prop.available)}; wants {whole0(prop.total)}/yr (limited by {prop.limitedBy}; now {whole0(prop.baseline)}).
+            Proposed wants for {aheadLabel}: {whole0(prop.total / 12)}/mo (now {whole0(prop.baseline / 12)}/mo)
           </span>
-          {prop.freed > 0 && <span className="text-up">+{whole0(prop.freed)}/yr to save or invest</span>}
+          {prop.freed > 0 && <span className="text-up">+{whole0((prop.freed / 12) * n)} saved by Dec 31</span>}
           <button type="button" className="rounded border border-border px-2 py-0.5 text-foreground hover:bg-accent" onClick={applyProposal}>
-            Use proposed wants ({aheadLabel})
+            Use proposed
           </button>
         </div>
       )}
-      <p className="num mt-1 text-[11px] text-muted-foreground">
-        {whole0(income)} take-home − {whole0(spending)} spending − {whole0(sum(plan.save))} save − {whole0(sum(plan.invest))} invest ={" "}
-        <span className={unassigned < 0 ? "text-down" : "text-foreground"}>{whole0(unassigned)} unassigned</span>
-      </p>
       {missing.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {missing.map((c) => {
-            const a = avgOf(c.name);
+            const so = soFarOfRow(actualOf(c.name));
             return (
               <button
                 key={c.name}
                 type="button"
-                onClick={() => setPlan((pl) => addBudgetRow(pl, c.name, a ? Math.round(a) : 0))}
-                title={a ? `Adds ${whole0(a)} every month: your average over ${range} (× 12 = ${whole0(a * 12)}, an estimate)` : undefined}
-                className={cn("rounded border border-dashed px-1.5 py-0.5 text-[10px] hover:text-foreground", a ? "border-amber-500/50 text-amber-300" : "border-border text-muted-foreground")}
+                onClick={() => setPlan((pl) => addBudgetRow(pl, c.name, avgOf(c.name) ? Math.round(avgOf(c.name)!) : 0))}
+                className={cn("rounded border border-dashed px-1.5 py-0.5 text-[10px] hover:text-foreground", so > 0 ? "border-amber-500/50 text-amber-300" : "border-border text-muted-foreground")}
               >
                 + {c.name}
-                {a && ` · est. ${whole0(a * 12)}/yr`}
+                {so > 0 ? ` · ${whole0(so)} so far` : ""}
               </button>
             );
           })}

@@ -4,10 +4,12 @@ import { AlertTriangle } from "lucide-react";
 import { PriceFeedProvider } from "@/hooks/price-feed";
 import { useConfig } from "@/hooks/queries";
 import { useShortcuts } from "@/hooks/shortcuts";
+import { useAlertEngine } from "@/hooks/alert-engine";
 import { cn } from "@/lib/utils";
 import { useUi, type View } from "@/stores/ui";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { DashboardView } from "./dashboard";
+import { EarningsBanner } from "./earnings-banner";
 import { OrderTicket } from "./order-ticket";
 import { StatusBar } from "./status-bar";
 import { CommandPalette } from "./symbol-search";
@@ -67,6 +69,12 @@ function CenterView() {
   );
 }
 
+/** Mounted inside the price-feed provider so alert symbols join the poll. */
+function AlertEngine() {
+  useAlertEngine();
+  return null;
+}
+
 function DemoBanner() {
   return (
     <div className="flex h-6 shrink-0 items-center justify-center gap-2 bg-amber-500 text-[11px] font-semibold tracking-wider text-black uppercase">
@@ -83,6 +91,8 @@ export function Terminal() {
       <div className="flex h-full flex-col">
         {cfg?.demoMode && <DemoBanner />}
         <TopBar />
+        <EarningsBanner />
+        <AlertEngine />
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
           <ResizablePanel id="watchlist" defaultSize={430} minSize={300} maxSize={640} collapsible collapsedSize={0}>
             <WatchlistPanel />

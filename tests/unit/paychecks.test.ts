@@ -120,3 +120,23 @@ describe("paychecks you already know (from deposits)", () => {
     expect(checks.every((c) => c.amount === 486.49)).toBe(true);
   });
 });
+
+describe("hourly job with deposits (Tampa Brass: $20/h, Jan 8 – Apr 8, paid every other Friday, one week behind)", () => {
+  const regis = [
+    ["2026-01-16", 138.52], ["2026-02-27", 1521.93], ["2026-03-13", 1365.12], ["2026-03-30", 1000], ["2026-04-03", 432.91], ["2026-04-10", 1303.8], ["2026-04-24", 486.49],
+  ].map(([date, amount]) => ({ date: date as string, description: "REGIS GROUP DES:PAYROLL", amount: amount as number, category: "Income" }));
+  it("the usual paycheck ignores the partial first/last and off-cycle deposits", () => {
+    const [x] = detectPaychecks([...regis, { date: "2026-10-26", description: "UBER", amount: -5, category: "Transportation" }]);
+    // on schedule: Jan 16, Feb 27, Mar 13, Apr 10, Apr 24 → middle ones 1,521.93 / 1,365.12 / 1,303.80 → median 1,365.12
+    expect(x).toMatchObject({ frequency: "biweekly", payDay: 5, amount: 1365.12, latest: 486.49, ongoing: false });
+  });
+  it("hourly: 2 days in the first check, 10 per full check, 3 in the last (gross)", () => {
+    const tampa: IncomeStream = { id: "t", name: "Tampa Brass", amount: 20, frequency: "hourly", hoursPerWeek: 40, payEvery: "biweekly", basis: "gross", kind: "salary", payDay: 5, employmentStart: "2026-01-08", employmentEnd: "2026-04-08", firstPayDate: "2026-01-16" };
+    const c = paychecks(tampa, "2026-01-01", "2026-12-31");
+    // lag 7 days (start Thu Jan 8 → first Friday Jan 9, first check Jan 16): Jan 16 covers Dec 27–Jan 9 (Thu+Fri = 2 × 8 h × $20 = 320);
+    // Jan 30 … Apr 10: 10 workdays = 1,600; Apr 24 covers Apr 4–17: Mon–Wed Apr 6–8 = 480. On the every-other-Friday schedule.
+    expect(c.map((x) => [x.date, x.amount])).toEqual([
+      ["2026-01-16", 320], ["2026-01-30", 1600], ["2026-02-13", 1600], ["2026-02-27", 1600], ["2026-03-13", 1600], ["2026-03-27", 1600], ["2026-04-10", 1600], ["2026-04-24", 480],
+    ]);
+  });
+});

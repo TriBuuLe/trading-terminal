@@ -12,7 +12,8 @@ export interface PayPattern {
   employer: string;
   frequency: "weekly" | "biweekly" | "semimonthly" | "monthly";
   payDay: number | null; // 0 Sunday … 6 Saturday (weekly / biweekly)
-  amount: number; // latest paycheck (take-home)
+  amount: number; // usual paycheck: median of on-schedule deposits, leaving out the first/last (often partial) and off-cycle ones
+  latest: number;
   average: number; // average of all deposits found
   count: number;
   first: string;
@@ -58,13 +59,15 @@ export function detectPaychecks(txs: PayTx[]): PayPattern[] {
     const payDay = frequency === "weekly" || frequency === "biweekly" ? [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0] : null;
     const period = { weekly: 7, biweekly: 14, semimonthly: 16, monthly: 31 }[frequency];
     const last = xs.at(-1)!;
+    const amount = usualPaycheck(xs, frequency, payDay);
     // Still coming if the last one is within one pay period (+ a few days) of the newest transaction you imported.
     const ongoing = (t(dataEnd) - t(last.date)) / dayMs <= period + 4;
     out.push({
       employer,
       frequency,
       payDay,
-      amount: round2(last.amount),
+      amount,
+      latest: round2(last.amount),
       average: round2(xs.reduce((s, x) => s + x.amount, 0) / xs.length),
       count: xs.length,
       first: xs[0]!.date,
@@ -72,7 +75,7 @@ export function detectPaychecks(txs: PayTx[]): PayPattern[] {
       ongoing,
       line: {
         name: employer,
-        amount: round2(last.amount),
+        amount,
         frequency,
         basis: "net",
         kind: "salary",
@@ -84,6 +87,20 @@ export function detectPaychecks(txs: PayTx[]): PayPattern[] {
     });
   }
   return out.sort((a, b) => b.last.localeCompare(a.last));
+}
+
+/**
+ * The usual paycheck: median of deposits on the pay schedule (the main weekday,
+ * a whole number of periods after the first), without the first and last
+ * deposits (partial periods) and off-cycle ones (an advance on a Monday).
+ */
+function usualPaycheck(xs: PayTx[], frequency: PayPattern["frequency"], payDay: number | null): number {
+  const step = frequency === "weekly" ? 7 : frequency === "biweekly" ? 14 : 0;
+  const onSchedule = step && payDay !== null ? xs.filter((x) => new Date(t(x.date)).getUTCDay() === payDay && Math.round((t(x.date) - t(xs[0]!.date)) / dayMs) % step === 0) : xs;
+  const core = onSchedule.length >= 4 ? onSchedule.slice(1, -1) : onSchedule.length ? onSchedule : xs;
+  const sorted = core.map((x) => x.amount).sort((a, b) => a - b);
+  const mid = sorted.length / 2;
+  return round2(sorted.length % 2 ? sorted[Math.floor(mid)]! : (sorted[mid - 1]! + sorted[mid]!) / 2);
 }
 
 /** Twice a month on (about) the same days, e.g. the 15th and the last day. */

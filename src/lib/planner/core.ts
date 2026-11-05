@@ -73,7 +73,9 @@ export function paychecks(s: IncomeStream, from: string, to: string): { date: st
   const measured = s.firstPayDate && s.employmentStart ? Math.max(0, utc(s.firstPayDate) - onOrAfter(utc(s.employmentStart), payDay)) : null;
   const lag = measured ?? (s.periodEndsDaysBefore ?? 0) * dayMs;
   const first = s.firstPayDate ? utc(s.firstPayDate) : onOrAfter(utc(s.employmentStart!) + lag, payDay);
-  const last = s.lastPayDate ? utc(s.lastPayDate) : s.employmentEnd ? onOrAfter(utc(s.employmentEnd) + lag, payDay) : Infinity;
+  // Last paycheck: known, or the first payday ON THE SCHEDULE on/after (employment end + lag).
+  const period = sch.periodDays * dayMs;
+  const last = s.lastPayDate ? utc(s.lastPayDate) : s.employmentEnd ? first + Math.max(0, Math.ceil((utc(s.employmentEnd) + lag - first) / period)) * period : Infinity;
   const lo = utc(from);
   const hi = Math.min(last, utc(to));
   const days = s.workdays?.length ? s.workdays : [1, 2, 3, 4, 5];

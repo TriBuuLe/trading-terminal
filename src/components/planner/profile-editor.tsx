@@ -186,7 +186,7 @@ const scheduled = (i: Profile["incomes"][number]) => i.frequency === "weekly" ||
 const shortDate = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const FREQ_LABEL: Record<string, string> = { weekly: "every", biweekly: "every other", semimonthly: "twice a month", monthly: "monthly", annual: "yearly", once: "once", hourly: "per hour" };
+const FREQ_LABEL: Record<string, string> = { weekly: "weekly,", biweekly: "biweekly,", semimonthly: "twice a month", monthly: "monthly", annual: "yearly", once: "once", hourly: "per hour" };
 
 /** Small label above a control, so the expanded editor reads as a form. */
 function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
@@ -202,7 +202,7 @@ function Field({ label, children, className }: { label: string; children: ReactN
 function scheduleText(i: Profile["incomes"][number]): string {
   const amt = usd(i.amount);
   if (i.frequency === "once") return `${amt} once${i.firstPayDate ? `, ${shortDate(i.firstPayDate)}` : ""}`;
-  if (i.frequency === "hourly") return `${amt}/h × ${i.hoursPerWeek ?? 40} h/wk${i.payEvery ? `, paid ${i.payEvery === "weekly" ? "weekly" : "every 2 wks"} ${DAY_SHORT[i.payDay ?? 5]}` : ""}`;
+  if (i.frequency === "hourly") return `${amt}/h × ${i.hoursPerWeek ?? 40} h/wk${i.payEvery ? `, paid ${i.payEvery === "weekly" ? "weekly" : "biweekly"}, ${DAY_SHORT[i.payDay ?? 5]}` : ""}`;
   if (i.frequency === "weekly" || i.frequency === "biweekly") return `${amt} ${FREQ_LABEL[i.frequency]} ${DAY_SHORT[i.payDay ?? 5]}`;
   return `${amt} ${FREQ_LABEL[i.frequency]}`;
 }
@@ -307,7 +307,7 @@ function IncomeLine({ i, year, p, pattern, upd, remove, applyPattern }: {
                 }}
               >
                 <option value="weekly">weekly</option>
-                <option value="biweekly">every 2 weeks</option>
+                <option value="biweekly">biweekly</option>
                 <option value="hourly">hourly</option>
                 <option value="semimonthly">twice a month</option>
                 <option value="monthly">monthly</option>
@@ -365,10 +365,10 @@ function IncomeLine({ i, year, p, pattern, upd, remove, applyPattern }: {
                   <Field label="Hours / week">
                     <Num label="Hours per week" value={i.hoursPerWeek ?? 40} onChange={(n) => upd({ hoursPerWeek: n })} className="w-16" />
                   </Field>
-                  <Field label="Paid every">
+                  <Field label="Paychecks">
                     <select aria-label="Paid how often" className={inp} value={i.payEvery ?? ""} onChange={(e) => upd({ payEvery: (e.target.value || undefined) as "weekly" | "biweekly" | undefined })}>
-                      <option value="weekly">week</option>
-                      <option value="biweekly">2 weeks</option>
+                      <option value="weekly">weekly</option>
+                      <option value="biweekly">biweekly</option>
                       <option value="">(monthly estimate)</option>
                     </select>
                   </Field>
@@ -435,7 +435,7 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
   return (
     <Section
       title="Income"
-      hint="One line per job or payment. Weekly and every-2-weeks pay counts each payday; paycheck dates come from your payroll deposits."
+      hint="One line per job or payment. Weekly and biweekly pay counts each payday; paycheck dates come from your payroll deposits."
       onAdd={() => set((x) => ({ ...x, incomes: [...x.incomes, { id: uid(), name: "", amount: 0, frequency: "weekly", kind: "salary", basis: "net", payDay: 5, employmentStart: null, firstPayDate: null }] }))}
     >
       {p.incomes.length === 0 && <p className="text-[11px] text-muted-foreground">No income yet.</p>}

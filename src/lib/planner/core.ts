@@ -26,8 +26,7 @@ export function monthsBetween(from: YearMonth, to: YearMonth): number {
 export function incomeInMonth(streams: IncomeStream[], month: YearMonth): number {
   let total = 0;
   for (const s of streams) {
-    if (s.startMonth && month < s.startMonth) continue;
-    if (s.endMonth && month > s.endMonth) continue;
+    if (!isActive(s, month)) continue;
     let amt = monthlyEquivalent(s.amount, s.frequency);
     if (s.annualRaisePct && s.startMonth) {
       const years = Number(month.slice(0, 4)) - Number(s.startMonth.slice(0, 4));
@@ -36,6 +35,33 @@ export function incomeInMonth(streams: IncomeStream[], month: YearMonth): number
     total += amt;
   }
   return total;
+}
+
+/**
+ * Is an income stream paying in `month`?
+ *  - one-off window: startMonth ≤ month ≤ endMonth (either side open-ended)
+ *  - repeatsYearly: the same calendar months every year from the start year on
+ *    (e.g. a Sep–Dec co-op term; Nov–Feb wraps across New Year)
+ */
+export function isActive(s: IncomeStream, month: YearMonth): boolean {
+  if (s.repeatsYearly && s.startMonth && s.endMonth) {
+    if (month < s.startMonth) return false;
+    const m = Number(month.slice(5, 7));
+    const a = Number(s.startMonth.slice(5, 7));
+    const b = Number(s.endMonth.slice(5, 7));
+    return a <= b ? m >= a && m <= b : m >= a || m <= b;
+  }
+  if (s.startMonth && month < s.startMonth) return false;
+  if (s.endMonth && month > s.endMonth) return false;
+  return true;
+}
+
+/** Income for each of the next `n` months (for the timeline). */
+export function incomeTimeline(streams: IncomeStream[], from: YearMonth, n = 12): { month: YearMonth; amount: number }[] {
+  return Array.from({ length: n }, (_, i) => {
+    const month = addMonths(from, i);
+    return { month, amount: round2(incomeInMonth(streams, month)) };
+  });
 }
 
 /** Average monthly income over the next `n` months (smooths co-op/school terms). */

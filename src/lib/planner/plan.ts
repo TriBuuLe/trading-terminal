@@ -1,5 +1,6 @@
 import {
   averageIncome,
+  incomeTimeline,
   cashFlow,
   cutSuggestions,
   emergencyFundTarget,
@@ -65,6 +66,8 @@ export interface Plan {
   asOf: YearMonth;
   realDollars: true;
   monthlyIncome: number;
+  /** Income month by month for the next 12 months (what the average is made of). */
+  incomeByMonth: { month: YearMonth; amount: number }[];
   cashFlow: CashFlow;
   savingsTarget: number;
   cuts: { category: string; cut: number }[];
@@ -245,13 +248,17 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
     message:
       shortfall <= 0
         ? "Your savings cover every goal on schedule."
-        : `Your goals need ${usd(goalNeed)}/month but ${usd(avail)} is available: ${usd(shortfall)}/month short. ` +
+        : cf.available < 0
+          ? `You're spending ${usd(-cf.available)}/month more than your average income (${usd(cf.income)}), so nothing goes to goals yet (they need ${usd(goalNeed)}/month). ` +
+            "Check that all your future income is entered (next terms, summer jobs, full-time work), then look at spending."
+          : `Your goals need ${usd(goalNeed)}/month but ${usd(avail)} is available: ${usd(shortfall)}/month short. ` +
           `Behind: ${behind.join(", ")}. Options: cut spending, push target dates out, lower targets, or raise income. Higher-priority goals are funded first.`,
   };
   return {
     asOf,
     realDollars: true,
     monthlyIncome: round2(income),
+    incomeByMonth: incomeTimeline(p.incomes, asOf, 12),
     cashFlow: cf,
     savingsTarget,
     cuts: cutSuggestions(p.expenses, savingsTarget - Math.max(0, cf.available)),

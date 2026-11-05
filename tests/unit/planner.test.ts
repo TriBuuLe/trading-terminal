@@ -241,3 +241,31 @@ describe("profile validation", () => {
     expect(profileInputSchema.safeParse(ok).success).toBe(true);
   });
 });
+
+import { incomeTimeline, isActive } from "@/lib/planner/core";
+
+describe("repeating co-op terms", () => {
+  const term = (start: string, end: string, repeats = true) => ({ id: "t", name: "Co-op", amount: 5300, frequency: "monthly" as const, kind: "coop" as const, startMonth: start, endMonth: end, repeatsYearly: repeats });
+  it("a Sep–Dec term counts every fall once it starts", () => {
+    const t = term("2026-09", "2026-12");
+    expect(isActive(t, "2026-11")).toBe(true);
+    expect(isActive(t, "2027-03")).toBe(false);
+    expect(isActive(t, "2027-10")).toBe(true);
+    expect(isActive(t, "2026-08")).toBe(false); // before the first term
+    // From Nov 2026: Nov, Dec 2026 + Sep, Oct 2027 = 4 months × 5,300 / 12 = 1,766.67
+    expect(averageIncome([t], "2026-11", 12)).toBeCloseTo(1766.67, 2);
+  });
+  it("wraps across New Year (Nov–Feb)", () => {
+    const t = term("2026-11", "2027-02");
+    expect(["2026-11", "2026-12", "2027-01", "2027-02", "2027-03"].map((m) => isActive(t, m))).toEqual([true, true, true, true, false]);
+  });
+  it("three back-to-back yearly terms cover the whole year", () => {
+    const streams = [term("2026-01", "2026-04"), { ...term("2026-05", "2026-08"), id: "b", amount: 4000 }, { ...term("2026-09", "2026-12"), id: "c", amount: 3000 }];
+    // every month has one term: (4×5,300 + 4×4,000 + 4×3,000) / 12 = 4,100
+    expect(averageIncome(streams, "2026-11", 12)).toBeCloseTo(4100, 6);
+    expect(incomeTimeline(streams, "2026-11", 12).every((m) => m.amount > 0)).toBe(true);
+  });
+  it("a one-off term that already ended counts nothing", () => {
+    expect(averageIncome([term("2026-05", "2026-08", false)], "2026-11", 12)).toBe(0);
+  });
+});

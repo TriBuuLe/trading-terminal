@@ -16,6 +16,8 @@ export interface IncomeStream {
   endMonth?: YearMonth | null;
   /** Expected yearly raise, % (applied each January after the start year). */
   annualRaisePct?: number;
+  /** Same calendar months every year (e.g. a Sep–Dec co-op term each fall). */
+  repeatsYearly?: boolean;
 }
 
 export interface Expense {

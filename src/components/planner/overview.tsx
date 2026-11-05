@@ -79,6 +79,39 @@ function CashFlowBar({ plan }: { plan: Plan }) {
 
 const STEP_ICON = { done: CheckCircle2, active: CircleDot, waiting: Circle } as const;
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** The 12 months the income average is made of: one bar per month, the average as a dashed line. */
+function IncomeTimeline({ plan }: { plan: Plan }) {
+  const months = plan.incomeByMonth;
+  const max = Math.max(1, ...months.map((m) => m.amount), plan.monthlyIncome);
+  const zero = months.filter((m) => m.amount === 0).length;
+  return (
+    <Card title="Income, month by month (next 12 months)">
+      <div className="relative flex h-24 items-end gap-[2px]">
+        <div className="pointer-events-none absolute inset-x-0 border-t border-dashed border-muted-foreground/60" style={{ bottom: `${(plan.monthlyIncome / max) * 100}%` }} title="12-month average" />
+        {months.map((m) => (
+          <div key={m.month} className="group relative flex h-full flex-1 flex-col justify-end" title={`${m.month}: ${money(m.amount)}`}>
+            <div className="w-full rounded-t-[3px]" style={{ height: `${(m.amount / max) * 100}%`, minHeight: m.amount > 0 ? 2 : 0, background: "#199e70" }} />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex gap-[2px] text-center text-[9px] text-muted-foreground">
+        {months.map((m) => (
+          <span key={m.month} className="flex-1">
+            {MONTHS[Number(m.month.slice(5, 7)) - 1]}
+            {m.month.endsWith("-01") && <span className="block">{m.month.slice(0, 4)}</span>}
+          </span>
+        ))}
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        Dashed line = the average the plan uses ({money(plan.monthlyIncome)}/mo). {zero > 0 && `${zero} of the next 12 months have no income entered. `}
+        {zero > 0 && "If you'll be working then (another co-op term, a summer job, full-time after graduation), add it under My finances, or tick “repeats every year” on recurring terms."}
+      </p>
+    </Card>
+  );
+}
+
 function ProbabilityBar({ p }: { p: number | null }) {
   if (p === null) return <span className="text-muted-foreground">—</span>;
   const pct = Math.round(p * 100);
@@ -211,6 +244,8 @@ export function PlanOverview({ country }: { country: Country }) {
         <Tile label="Goals need / month" value={money(plan.feasibility.needed)} sub={plan.feasibility.shortfall > 0 ? <span className="text-down">short {money(plan.feasibility.shortfall)}/mo</span> : "covered"} />
         <Tile label="Net worth today" value={money(plan.netWorth.current)} sub={`median in ${plan.netWorth.years}y: ${money(plan.netWorth.sim.p50, { compact: true, whole: true })} (today's $)`} />
       </div>
+
+      <IncomeTimeline plan={plan} />
 
       <div className={cn("rounded-md border p-3 text-xs", plan.feasibility.shortfall > 0 ? "border-down/40 bg-down-muted" : "border-up/40 bg-up-muted")}>
         <p>{plan.feasibility.message}</p>

@@ -109,10 +109,18 @@ const ymOf = (ms: number) => {
 
 /** How one income line feeds the plan: active months in the next 12 and its share of the average. */
 function IncomeEffect({ i, now }: { i: Profile["incomes"][number]; now: string }) {
-  if (i.startMonth && i.endMonth && i.endMonth < i.startMonth) {
+  if (!i.repeatsYearly && i.startMonth && i.endMonth && i.endMonth < i.startMonth) {
     return (
       <p className="text-[11px] text-down">
         Ends ({i.endMonth}) before it starts ({i.startMonth}), so it never counts. Fix the dates.
+      </p>
+    );
+  }
+  if (!i.repeatsYearly && i.endMonth && i.endMonth < now) {
+    return (
+      <p className="text-[11px] text-amber-300">
+        Ended {i.endMonth}: past income isn&apos;t counted (the plan looks at the next 12 months). If you&apos;ll work this term again, tick “repeats every year” or
+        add next year&apos;s dates.
       </p>
     );
   }
@@ -122,7 +130,8 @@ function IncomeEffect({ i, now }: { i: Profile["incomes"][number]; now: string }
     <p className="text-[10px] text-muted-foreground">
       Active {active} of the next 12 months → adds ${avg.toFixed(2)}/month to your average
       {active > 0 && active < 12 && ` ($${monthlyEquivalent(i.amount, i.frequency).toFixed(2)}/month while active)`}
-      {active === 0 && i.amount > 0 && " (check the dates: it doesn't fall in the next 12 months)"}.
+      {active === 0 && i.amount > 0 && " (it starts more than 12 months from now)"}
+      {i.repeatsYearly && i.startMonth && i.endMonth && ` · every year, ${i.startMonth.slice(5)}→${i.endMonth.slice(5)} (month numbers)`}.
     </p>
   );
 }
@@ -161,6 +170,10 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
             <input aria-label="Start month" type="month" className={inp} value={i.startMonth ?? ""} onChange={(e) => upd(i.id, { startMonth: e.target.value || null })} />
             <span className="text-muted-foreground">to</span>
             <input aria-label="End month" type="month" className={inp} value={i.endMonth ?? ""} onChange={(e) => upd(i.id, { endMonth: e.target.value || null })} />
+            <label className="flex items-center gap-1 text-muted-foreground" title="Counts the same months every year, e.g. a Sep–Dec co-op term each fall">
+              <input type="checkbox" checked={i.repeatsYearly ?? false} disabled={!i.startMonth || !i.endMonth} onChange={(e) => upd(i.id, { repeatsYearly: e.target.checked })} />
+              repeats every year
+            </label>
             <label className="flex items-center gap-1 text-muted-foreground">
               raise %/yr <Num label="Raise percent" value={i.annualRaisePct ?? 0} step={0.5} onChange={(n) => upd(i.id, { annualRaisePct: n })} className="w-14" />
             </label>

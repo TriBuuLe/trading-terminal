@@ -5,7 +5,11 @@ export type View = "dashboard" | "ticker" | "portfolio" | "movers" | "news" | "a
 
 export type TicketPrefill = Partial<Omit<OrderRequest, "source" | "tags" | "why">> & { why?: string; tags?: string[]; nonce: number };
 
+export type Mode = "planner" | "terminal";
+
 interface UiState {
+  mode: Mode;
+  setMode(m: Mode): void;
   view: View;
   symbol: string;
   ticket: TicketPrefill | null;
@@ -20,15 +24,17 @@ interface UiState {
 }
 
 export const useUi = create<UiState>((set) => ({
+  mode: "planner",
+  setMode: (mode) => set({ mode }),
   view: "dashboard",
   symbol: "SPY",
   ticket: null,
   searchOpen: false,
   paletteOpen: false,
   setView: (view) => set({ view }),
-  openTicker: (symbol) => set({ symbol: symbol.toUpperCase(), view: "ticker" }),
+  openTicker: (symbol) => set({ symbol: symbol.toUpperCase(), view: "ticker", mode: "terminal" }),
   setSymbol: (symbol) => set({ symbol: symbol.toUpperCase() }),
-  prefillTicket: (p) => set({ ticket: { ...p, nonce: Date.now() }, symbol: p.symbol ? p.symbol.toUpperCase() : useUi.getState().symbol }),
+  prefillTicket: (p) => set({ mode: "terminal", ticket: { ...p, nonce: Date.now() }, symbol: p.symbol ? p.symbol.toUpperCase() : useUi.getState().symbol }),
   setSearchOpen: (searchOpen) => set({ searchOpen }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
 }));

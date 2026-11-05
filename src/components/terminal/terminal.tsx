@@ -8,6 +8,7 @@ import { useAlertEngine } from "@/hooks/alert-engine";
 import { cn } from "@/lib/utils";
 import { useUi, type View } from "@/stores/ui";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { PlannerApp } from "../planner/planner-app";
 import { DashboardView } from "./dashboard";
 import { EarningsBanner } from "./earnings-banner";
 import { OrderTicket } from "./order-ticket";
@@ -85,6 +86,7 @@ function DemoBanner() {
 
 export function Terminal() {
   const { data: cfg } = useConfig();
+  const mode = useUi((s) => s.mode);
   useShortcuts();
   return (
     <PriceFeedProvider pollMs={cfg?.quotePollMs ?? 3000}>
@@ -93,6 +95,11 @@ export function Terminal() {
         <TopBar />
         <EarningsBanner />
         <AlertEngine />
+        {mode === "planner" ? (
+          <div className="min-h-0 flex-1">
+            <PlannerApp />
+          </div>
+        ) : (
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
           <ResizablePanel id="watchlist" defaultSize={430} minSize={300} maxSize={640} collapsible collapsedSize={0}>
             <WatchlistPanel />
@@ -106,6 +113,7 @@ export function Terminal() {
             <OrderTicket />
           </ResizablePanel>
         </ResizablePanelGroup>
+        )}
         <StatusBar />
         <CommandPalette />
       </div>

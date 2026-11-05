@@ -6,6 +6,10 @@ test("demo: app loads, watchlist renders, a demo order updates positions", async
   // Visible DEMO banner: mock data is never shown without it.
   await expect(page.getByText(/Demo data: prices and fills are simulated/i)).toBeVisible();
 
+  // The planner is the home screen (first run shows the setup wizard); switch to the terminal.
+  await expect(page.getByText("Set up your plan")).toBeVisible();
+  await page.getByRole("tab", { name: "Terminal" }).click();
+
   // Watchlist renders with live (simulated) prices.
   const watchlist = page.locator("section", { hasText: "Watchlist · Main" });
   await expect(watchlist.getByText("AAPL", { exact: true })).toBeVisible();

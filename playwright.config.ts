@@ -29,6 +29,8 @@ export default defineConfig({
       ALPACA_API_KEY_ID: "",
       ALPACA_API_SECRET_KEY: "",
       FINNHUB_API_KEY: "",
+      GEMINI_API_KEY: "",
+      DATA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
     },
   },
 });

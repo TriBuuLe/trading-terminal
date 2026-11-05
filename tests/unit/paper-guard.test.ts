@@ -50,6 +50,7 @@ describe("env schema", () => {
     AUTH_SECRET: "x".repeat(40),
     CRON_SECRET: "y".repeat(32),
     ALLOWED_GITHUB_USER: "me",
+    DATA_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
   };
 
   it("requires Alpaca keys unless DEMO_MODE", () => {

@@ -189,6 +189,35 @@ export const assets = pgTable(
   (t) => [index("assets_name").on(t.name)],
 );
 
+// ---------- financial planner (sensitive: encrypted at rest, AES-256-GCM) ----------
+
+/** Encrypted JSON documents keyed by name ("profile", …). Only the key and timestamp are plaintext. */
+export const finRecords = pgTable("fin_records", {
+  key: text("key").primaryKey(),
+  ciphertext: text("ciphertext").notNull(),
+  updatedAt: tsz("updated_at").notNull().defaultNow(),
+});
+
+/** Imported/entered transactions. Only the month (YYYY-MM) is plaintext, for filtering. */
+export const finTransactions = pgTable(
+  "fin_transactions",
+  {
+    id: serial("id").primaryKey(),
+    month: text("month").notNull(),
+    ciphertext: text("ciphertext").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("fin_tx_month").on(t.month)],
+);
+
+/** Saved plan versions / scenarios (encrypted snapshot of profile + changes + headline results). */
+export const planVersions = pgTable("plan_versions", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  ciphertext: text("ciphertext").notNull(),
+  createdAt: createdAt(),
+});
+
 // ---------- infrastructure ----------
 
 /** Shared API response cache (survives across serverless invocations). */

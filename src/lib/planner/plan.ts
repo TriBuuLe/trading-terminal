@@ -76,7 +76,11 @@ export interface Plan {
   netWorth: { current: number; sim: SimResult; years: number };
   sandbox: { pct: number; monthly: number };
   crossBorderWarning: string | null;
+  /** Can this month's savings fund every goal on time? */
+  feasibility: { needed: number; available: number; shortfall: number; message: string };
 }
+
+const usd = (x: number) => `$${round2(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const CROSS_BORDER =
   "Cross-border caution: Canada and the US tax each other's accounts differently. A TFSA isn't tax-sheltered for US taxpayers, Canadian ETFs/mutual funds can fall under US PFIC rules, and Roth IRAs are treated differently depending on residency. Talk to a cross-border tax professional before acting; this plan does not model it.";
@@ -229,7 +233,21 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
     seed: seed + 1000,
   });
 
-  const savingsTarget = round2(Math.max(cf.guideline.savings, goalPlans.reduce((s, g) => s + g.requiredMonthly, 0)));
+  const goalNeed = round2(goalPlans.reduce((s, g) => s + g.requiredMonthly, 0));
+  const savingsTarget = round2(Math.max(cf.guideline.savings, goalNeed));
+  const avail = Math.max(0, cf.available);
+  const shortfall = round2(Math.max(0, goalNeed - avail));
+  const behind = goalPlans.filter((g) => !g.onTrack).map((g) => g.goal.name);
+  const feasibility = {
+    needed: goalNeed,
+    available: round2(avail),
+    shortfall,
+    message:
+      shortfall <= 0
+        ? "Your savings cover every goal on schedule."
+        : `Your goals need ${usd(goalNeed)}/month but ${usd(avail)} is available: ${usd(shortfall)}/month short. ` +
+          `Behind: ${behind.join(", ")}. Options: cut spending, push target dates out, lower targets, or raise income. Higher-priority goals are funded first.`,
+  };
   return {
     asOf,
     realDollars: true,
@@ -245,5 +263,6 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
     netWorth: { current: round2(assets - debts), sim: nw, years: nwYears },
     sandbox: { pct: p.sandboxPct, monthly: round2((steps[5]!.monthly * p.sandboxPct) / 100) },
     crossBorderWarning: p.crossBorder ? CROSS_BORDER : null,
+    feasibility,
   };
 }

@@ -46,6 +46,8 @@ export function TopBar() {
   const { data: cfg } = useConfig();
   const setSearchOpen = useUi((s) => s.setSearchOpen);
   const setView = useUi((s) => s.setView);
+  const mode = useUi((s) => s.mode);
+  const setMode = useUi((s) => s.setMode);
   useWantQuotes(INDEX_SYMBOLS.map((i) => i.symbol));
 
   return (
@@ -55,6 +57,19 @@ export function TopBar() {
         <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-amber-300" title="Paper trading only: no real money">
           PAPER
         </span>
+      </div>
+      <div className="flex rounded-md border border-border bg-background p-0.5 text-xs" role="tablist" aria-label="Mode">
+        {(["planner", "terminal"] as const).map((m) => (
+          <button
+            key={m}
+            role="tab"
+            aria-selected={mode === m}
+            onClick={() => setMode(m)}
+            className={cn("rounded px-2.5 py-0.5 capitalize", mode === m ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground")}
+          >
+            {m === "planner" ? "Planner" : "Terminal"}
+          </button>
+        ))}
       </div>
       <div className="h-7 w-px bg-border" />
       <MarketClock />

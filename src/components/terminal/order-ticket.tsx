@@ -154,6 +154,11 @@ export function OrderTicket() {
   });
 
   const position = positions.data?.find((p) => p.symbol === symbol) ?? null;
+  const sandbox = useQuery({
+    queryKey: ["sandbox"],
+    queryFn: () => api<{ configured: boolean; pct?: number; limit?: number }>("/api/finances/sandbox"),
+    staleTime: 60_000,
+  });
   const req = useMemo(() => toRequest(symbol, f), [symbol, f]);
   const parsed = orderRequestSchema.safeParse(req);
   const problems = useMemo(() => {
@@ -188,6 +193,14 @@ export function OrderTicket() {
     warnings.push(`You've made ${account.data.daytradeCount} day trades in 5 days with under $25k equity: another same-day round trip will be blocked (PDT rule).`);
   if (f.side === "sell" && (!position || Number(position.qty) <= 0)) warnings.push("You don't hold this stock: this is a SHORT sale.");
   if (pv.buyingPowerAfter && pv.buyingPowerAfter.lt(0)) warnings.push("Estimated cost exceeds buying power; Alpaca will likely reject it.");
+  // Planner tie-in: stock picking beyond the plan's sandbox share of real investable money.
+  if (f.side === "buy" && pv.estCost && sandbox.data?.configured && sandbox.data.limit !== undefined) {
+    const exposure = Number(account.data?.longMarketValue ?? 0) + pv.estCost.toNumber();
+    if (exposure > sandbox.data.limit)
+      warnings.push(
+        `Over your plan's stock-picking sandbox: ${money(exposure.toFixed(2))} in picks vs a ${money(sandbox.data.limit.toFixed(2))} limit (${sandbox.data.pct}% of your real investable money). The rest is meant to follow the plan's index portfolio.`,
+      );
+  }
 
   const canReview = Boolean(sizeEntered) && problems.length === 0 && parsed.success;
 

@@ -23,6 +23,23 @@ export const envSchema = z
     ALLOWED_GITHUB_USER: optionalString,
     CRON_SECRET: z.preprocess(emptyToUndefined, z.string().min(16, "CRON_SECRET must be at least 16 chars")),
     DEMO_MODE: z.preprocess(emptyToUndefined, bool.default(false)),
+    DATA_ENCRYPTION_KEY: z.preprocess(
+      emptyToUndefined,
+      z.string().refine((v) => Buffer.from(v, "base64").length === 32, "DATA_ENCRYPTION_KEY must be 32 bytes base64 (openssl rand -base64 32)"),
+    ),
+    LLM_PROVIDER: z.preprocess(emptyToUndefined, z.enum(["gemini", "ollama"]).default("gemini")),
+    GEMINI_API_KEY: optionalString,
+    // Ordered fallback list (strongest first). Verified against Google's model list 2026-11-04.
+    GEMINI_MODELS: z.preprocess(
+      emptyToUndefined,
+      z
+        .string()
+        .default("gemini-3.8-flash,gemini-3.5-flash-lite")
+        .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean)),
+    ),
+    OLLAMA_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().default("http://localhost:11434")),
+    OLLAMA_MODEL: optionalString,
+    ALLOW_PROVIDER_TRAINING_ON_DATA: z.preprocess(emptyToUndefined, bool.default(false)),
   })
   .superRefine((e, ctx) => {
     if (!e.DEMO_MODE && (!e.ALPACA_API_KEY_ID || !e.ALPACA_API_SECRET_KEY)) {

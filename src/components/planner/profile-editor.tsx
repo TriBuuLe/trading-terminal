@@ -77,7 +77,10 @@ type Set = (fn: (p: Profile) => Profile) => void;
 
 export function BasicsSection({ p, set }: { p: Profile; set: Set }) {
   return (
-    <Section title="About you" hint="Country decides which account types the plan uses (TFSA/RRSP/FHSA vs 401(k)/IRA/HSA).">
+    <Section
+      title="About you"
+      hint="Country decides which account types and tax rules the plan uses (TFSA/RRSP/FHSA vs 401(k)/IRA/HSA). Province/state is saved for reference only: the app doesn't calculate state or provincial tax. Income is entered after tax, and tax estimates use the marginal rate you set under Tax facts (use your combined federal + state rate)."
+    >
       <div className="flex flex-wrap items-end gap-3 text-xs">
         <label className="grid gap-1">
           Country
@@ -480,7 +483,7 @@ export function TaxFactsSection({ p, set }: { p: Profile; set: Set }) {
           </label>
         </div>
         <label className="flex items-center gap-2">
-          Marginal income-tax rate (estimate) <Num label="Marginal tax rate" value={t.marginalTaxPct ?? 22} onChange={(n) => upd({ marginalTaxPct: n })} className="w-16" />%
+          Marginal income-tax rate, federal + state combined (your estimate) <Num label="Marginal tax rate" value={t.marginalTaxPct ?? 22} onChange={(n) => upd({ marginalTaxPct: n })} className="w-16" />%
           <span className="text-[10px] text-muted-foreground">used to estimate tax on non-qualified withdrawals</span>
         </label>
       </div>

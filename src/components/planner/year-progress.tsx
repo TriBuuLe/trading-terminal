@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Fragment } from "react";
-import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 import type { LongTermGoal, Progress, YearPlan } from "@/lib/planner/yearplan";
@@ -22,6 +22,12 @@ interface YearResponse {
   longTerm: LongTermGoal[];
   netWorth: number;
   income: { ahead: number; coveredThrough: string | null } | null;
+  balance: {
+    anchor: { date: string; balance: number } | null;
+    monthEnd: (number | null)[];
+    today: { date: string; cash: number };
+    projected: { date: string; cash: number; incomeAfterToday: number; budgetRest: number };
+  } | null;
 }
 
 function Card({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
@@ -88,52 +94,41 @@ export function YearProgress() {
           sub={rem.shortfall > 0 ? `spend this much less than your budget each month, or lower the goal` : `keep spending within your budget`}
         />
       </div>
-      <YearChart p={p} />
+      {r.balance && <BalanceChart b={r.balance} year={r.year} />}
       <MonthTable p={p} />
     </>
   );
 }
 
-/** Money kept since Jan 1 (money in − spending, incl. invested): statements solid, projection dashed, goal flat. */
-function YearChart({ p }: { p: Progress }) {
-  const last = p.toDate.months.at(-1);
-  const rest = p.remaining.months;
-  const step = rest.length ? (p.remaining.projected - (p.toDate.saved + p.toDate.invested)) / rest.length : 0;
-  const data: { label: string; kept: number | null; projected: number | null; note: string }[] = [];
-  for (let k = 0, cum = 0, proj = 0; k < p.months.length; k++) {
-    const m = p.months[k]!;
-    if (m.actual) cum += m.actual.saved + m.actual.invested;
-    if (m.month === last) proj = cum;
-    if (rest.includes(m.month)) proj += step;
-    data.push({
-      label: mName(m.month),
-      kept: !last || m.month <= last ? Math.round(cum) : null,
-      projected: m.month === last || rest.includes(m.month) ? Math.round(proj) : null,
-      note: m.actual ? `kept ${w(m.actual.saved + m.actual.invested)} this month` : m.status === "no statement" ? "no statement (not counted)" : rest.includes(m.month) ? "projected" : "",
-    });
-  }
+/** Checking balance: month ends from your statements (solid), today's balance, and Dec 31 projected (dashed). */
+function BalanceChart({ b, year }: { b: NonNullable<YearResponse["balance"]>; year: number }) {
+  const todayIdx = Number(b.today.date.slice(5, 7)) - 1;
+  const data = MONTHS.map((label, k) => ({
+    label,
+    statements: b.monthEnd[k] ?? null,
+    today: k === todayIdx ? b.today.cash : null,
+    projected: k === todayIdx ? b.today.cash : k === 11 && todayIdx < 11 ? b.projected.cash : null,
+  }));
   return (
-    <Card title={`Money kept since Jan 1, ${p.year}`}>
+    <Card title={`Checking balance, ${year}`}>
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
             <CartesianGrid stroke={C.grid} vertical={false} />
             <XAxis dataKey="label" tick={{ fill: C.tick, fontSize: 10 }} tickLine={false} axisLine={{ stroke: C.axis }} />
             <YAxis tick={{ fill: C.tick, fontSize: 10 }} tickLine={false} axisLine={false} width={56} tickFormatter={(v: number) => money(v, { compact: true, whole: true })} />
-            <Tooltip
-              contentStyle={{ background: "#1c1d21", border: "1px solid #2a2c31", borderRadius: 6, fontSize: 11 }}
-              formatter={(v, name) => [v === null || v === undefined ? "—" : money(Number(v)), String(name)]}
-              labelFormatter={(label, payload) => `${String(label)}${(payload?.[0]?.payload as (typeof data)[number] | undefined)?.note ? ` · ${(payload![0]!.payload as (typeof data)[number]).note}` : ""}`}
-            />
+            <Tooltip contentStyle={{ background: "#1c1d21", border: "1px solid #2a2c31", borderRadius: 6, fontSize: 11 }} formatter={(v, name) => [v === null || v === undefined ? "—" : money(Number(v)), String(name)]} />
             <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
-            <ReferenceLine y={0} stroke={C.axis} />
-            <ReferenceLine y={p.goals.total} stroke={C.goal} strokeDasharray="2 3" label={{ value: `goal ${w(p.goals.total)}`, fill: C.goal, fontSize: 10, position: "insideTopLeft" }} />
-            <Line dataKey="kept" name="Kept (statements)" stroke={C.actual} strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
-            <Line dataKey="projected" name="Projected (income still expected − budget)" stroke={C.planned} strokeDasharray="4 3" strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line dataKey="statements" name="End of month (statements)" stroke={C.actual} strokeWidth={2} dot={{ r: 2.5 }} isAnimationActive={false} />
+            <Line dataKey="projected" name="Projected" stroke={C.planned} strokeDasharray="4 3" strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
+            <Line dataKey="today" name="Today (you entered)" stroke={C.goal} strokeWidth={0} dot={{ r: 4, fill: C.goal }} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      {p.missing.length > 0 && <p className="mt-1 text-[10px] text-amber-300">No complete statement: {p.missing.map(mName).join(", ")} (not counted).</p>}
+      <p className="num mt-1 text-[11px] text-muted-foreground">
+        {b.anchor ? <>Rebuilt from your statements, anchored on the bank&apos;s balance {w(b.anchor.balance)} on {b.anchor.date}. </> : <>Import a Bank of America CSV to draw past balances. </>}
+        Dec 31: {w(b.today.cash)} today + {w(b.projected.incomeAfterToday)} paychecks after today − {w(b.projected.budgetRest)} budget for the rest of the year = <b className="text-foreground">{w(b.projected.cash)}</b>. Card purchases count once you pay the card.
+      </p>
     </Card>
   );
 }

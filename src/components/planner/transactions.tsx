@@ -37,7 +37,7 @@ export function Transactions() {
   const qc = useQueryClient();
   const now = new Date();
   const [month, setMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
-  const [preview, setPreview] = useState<{ rows: ParsedTx[]; skipped: number; looksLikeCard: boolean } | null>(null);
+  const [preview, setPreview] = useState<{ rows: ParsedTx[]; skipped: number; looksLikeCard: boolean; balance?: { date: string; balance: number; source: "statement" } | null } | null>(null);
   // Credit-card exports list purchases as positive; flip so money out is negative.
   const [cardMode, setCardMode] = useState(false);
   const list = useQuery({ queryKey: ["transactions", month], queryFn: () => api<StoredTx[]>(`/api/finances/transactions?month=${month}`) });
@@ -58,7 +58,7 @@ export function Transactions() {
   const upload = async (file: File) => {
     if (file.size > 5_000_000) return toast.error("File too large (5 MB max)");
     try {
-      const r = await api<{ rows: ParsedTx[]; skipped: number; looksLikeCard: boolean }>("/api/finances/transactions/preview", { method: "POST", body: { csv: await file.text() } });
+      const r = await api<{ rows: ParsedTx[]; skipped: number; looksLikeCard: boolean; balance: { date: string; balance: number; source: "statement" } | null }>("/api/finances/transactions/preview", { method: "POST", body: { csv: await file.text() } });
       setPreview(r);
       setCardMode(r.looksLikeCard);
     } catch (e) {
@@ -67,7 +67,7 @@ export function Transactions() {
   };
   const save = useMutation({
     mutationFn: (rows: ParsedTx[]) =>
-      api<{ saved: number; duplicates: number }>("/api/finances/transactions", { method: "POST", body: { rows: rows.map(({ date, description, amount, category }) => ({ date, description, amount, category })) } }),
+      api<{ saved: number; duplicates: number }>("/api/finances/transactions", { method: "POST", body: { rows: rows.map(({ date, description, amount, category }) => ({ date, description, amount, category })), balance: preview?.balance ?? null } }),
     onSuccess: async (r) => {
       toast.success(`Saved ${r.saved} transactions (encrypted)${r.duplicates ? `; skipped ${r.duplicates} already saved` : ""}`);
       setPreview(null);

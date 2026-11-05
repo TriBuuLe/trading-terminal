@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { route } from "@/server/api";
-import { addTransactions, deleteMonth, flipMonth, listTransactions, transactionMonths, updateTransactionCategory } from "@/server/finances";
+import { addBalanceAnchor, addTransactions, deleteMonth, flipMonth, listTransactions, transactionMonths, updateTransactionCategory } from "@/server/finances";
 import { body, searchParams } from "@/server/req";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,15 @@ const txSchema = z.object({
 });
 
 export const POST = route(async (req) => {
-  const b = await body(req, z.object({ rows: z.array(txSchema).min(1).max(5000) }));
+  const b = await body(
+    req,
+    z.object({
+      rows: z.array(txSchema).min(1).max(5000),
+      // The statement's own closing balance (Bank of America CSVs), kept to draw the checking balance
+      balance: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), balance: z.number().finite(), source: z.literal("statement") }).nullable().optional(),
+    }),
+  );
+  if (b.balance) await addBalanceAnchor(b.balance);
   return Response.json(await addTransactions(b.rows), { status: 201 });
 });
 

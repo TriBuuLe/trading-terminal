@@ -1,3 +1,4 @@
+import { statementBalance, type BalanceAnchor } from "./balance";
 /** Bank/credit-card CSV import: parse, normalize, strip identifiers, suggest categories. */
 
 export interface ParsedTx {
@@ -182,9 +183,9 @@ export function looksLikeCardStatement(rows: ParsedTx[], hasDebitCreditColumns: 
 /** Flip signs so money out is negative (use for credit-card statements). */
 export const flipSigns = <T extends { amount: number }>(rows: T[]): T[] => rows.map((r) => ({ ...r, amount: -r.amount }));
 
-export function importCsv(text: string, mine: MyRules = {}): { rows: ParsedTx[]; skipped: number; columns: Record<string, number>; looksLikeCard: boolean } {
+export function importCsv(text: string, mine: MyRules = {}): { rows: ParsedTx[]; skipped: number; columns: Record<string, number>; looksLikeCard: boolean; balance: BalanceAnchor | null } {
   const grid = parseCsv(text);
-  if (grid.length < 2) return { rows: [], skipped: 0, columns: {}, looksLikeCard: false };
+  if (grid.length < 2) return { rows: [], skipped: 0, columns: {}, looksLikeCard: false, balance: null };
   // Some banks (e.g. Bank of America) put a summary block above the real header: use the first row that has the columns.
   const columnsOf = (row: string[]) => {
     const header = row.map((h) => h.trim().toLowerCase());
@@ -220,7 +221,8 @@ export function importCsv(text: string, mine: MyRules = {}): { rows: ParsedTx[];
     }
     rows.push({ date, description: desc, amount: Math.round(amount * 100) / 100, ...suggestCategory(desc, amount, mine) });
   }
-  return { rows, skipped, columns: cols, looksLikeCard: looksLikeCardStatement(rows, cols.debit >= 0 || cols.credit >= 0) };
+  // The bank's own balance (Bank of America: "Running Bal." / "Ending balance"), to draw the real checking balance
+  return { rows, skipped, columns: cols, looksLikeCard: looksLikeCardStatement(rows, cols.debit >= 0 || cols.credit >= 0), balance: statementBalance(grid) };
 }
 
 const GENERIC = new Set(["the", "st", "sq", "tst", "aplpay", "pos", "debit", "purchase", "online", "www"]);

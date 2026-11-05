@@ -9,7 +9,8 @@ import { analyzeSpending, type SpendingAnalysis } from "@/lib/planner/spending";
 import { yearSummary, type YearSummary } from "@/lib/planner/summary";
 import { creditPaychecks, ensureYearPlan, noteBalanceEdit, syncPayDates, withPlanExpenses } from "@/lib/planner/sync";
 import { longTermGoals, plannedMonths, progress, type MonthActual } from "@/lib/planner/yearplan";
-import { yearIncome } from "@/lib/planner/received";
+import { aheadFor, yearIncome } from "@/lib/planner/received";
+import { monthEndBalances, type BalanceAnchor } from "@/lib/planner/balance";
 import { suggestCategory, type MyRules } from "@/lib/planner/csv";
 import { assumptionsSchema, profileSchema } from "@/lib/planner/schema";
 import type { Assumptions, Profile } from "@/lib/planner/types";
@@ -406,9 +407,41 @@ export async function getYearProgress(year: number) {
         s.months.map((m) => (m.status === "full" ? Math.round(c.txs.filter((x) => x.date.startsWith(m.month)).reduce((t, x) => t + x.amount, 0) * 100) / 100 : null)),
       ]),
     ),
+    balance: await (async () => {
+      // Checking balance: month ends rebuilt from the newest statement balance; today = what you entered; Dec 31 = today + paychecks after today − your budget for the rest of the year
+      const anchors = await getBalanceAnchors();
+      const anchor = anchors.at(-1) ?? null;
+      const cash = profile.accounts.filter((a) => a.type === "CASH" || a.type === "HISA").reduce((t, a) => t + a.balance, 0);
+      const asOf = profile.cashSync?.balanceAsOf ?? today;
+      const incomeAfterToday = profile.incomes.reduce((t, i) => t + aheadFor(i, asOf, year).amount, 0);
+      const restMonths = plan ? plan.budget.reduce((t, r) => t + r.months.slice(Number(today.slice(5, 7)) - 1).reduce((x, y) => x + y, 0), 0) : 0;
+      return {
+        anchor,
+        monthEnd: monthEndBalances(year, anchor, txs),
+        today: { date: asOf, cash: Math.round(cash * 100) / 100 },
+        projected: { date: `${year}-12-31`, cash: Math.round((cash + incomeAfterToday - restMonths) * 100) / 100, incomeAfterToday: Math.round(incomeAfterToday * 100) / 100, budgetRest: Math.round(restMonths * 100) / 100 },
+      };
+    })(),
     soFar: { months: s.fullMonths, received: s.income.actual, spent: s.spending.actual, invested: s.investments.year.net, saved: s.saved.actual },
     longTerm: longTermGoals(profile, profile.yearPlans?.[today.slice(0, 4)] ?? plan, netWorth, today),
     netWorth: Math.round(netWorth * 100) / 100,
     years: Object.keys(profile.yearPlans ?? {}).sort(),
   };
+}
+
+// ---------- checking balance (from statements) ----------
+
+/** Balances the bank printed on your statements (newest last). */
+export async function getBalanceAnchors(): Promise<BalanceAnchor[]> {
+  const rows = await db().select().from(finRecords).where(eq(finRecords.key, "balance_anchors")).limit(1);
+  return rows[0] ? decryptJson<BalanceAnchor[]>(rows[0].ciphertext, "fin:balance_anchors", key()) : [];
+}
+
+export async function addBalanceAnchor(a: BalanceAnchor): Promise<void> {
+  const list = [...(await getBalanceAnchors()).filter((x) => x.date !== a.date), a].sort((x, y) => x.date.localeCompare(y.date));
+  const ciphertext = encryptJson(list, "fin:balance_anchors", key());
+  await db()
+    .insert(finRecords)
+    .values({ key: "balance_anchors", ciphertext, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: finRecords.key, set: { ciphertext, updatedAt: new Date() } });
 }

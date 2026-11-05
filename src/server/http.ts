@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 import { RateLimitedError, type Limiter } from "./rate-limiter";
 
 export class UpstreamError extends Error {
@@ -146,8 +146,13 @@ export function errorResponse(e: unknown): Response {
   if (e instanceof SchemaError) {
     return Response.json({ error: e.message, service: e.service }, { status: 502 });
   }
-  if (e instanceof Error && e.name === "ZodError") {
-    return Response.json({ error: "Invalid request", details: e.message }, { status: 400 });
+  if (e instanceof z.ZodError) {
+    const problems = e.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`);
+    return Response.json({ error: problems[0] ?? "Invalid request", problems }, { status: 400 });
+  }
+  if (e instanceof Error && "problems" in e && "status" in e && typeof e.status === "number") {
+    // OrderRejectedError (kept structural to avoid a circular import)
+    return Response.json({ error: e.message, problems: e.problems }, { status: e.status });
   }
   const msg = e instanceof Error ? e.message : String(e);
   return Response.json({ error: msg }, { status: 500 });

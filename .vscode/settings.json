@@ -1,0 +1,5 @@
+{
+  // Tailwind v4 uses @theme / @custom-variant, which VS Code's built-in CSS checker doesn't know.
+  "css.lint.unknownAtRules": "ignore",
+  "files.associations": { "*.css": "tailwindcss" }
+}

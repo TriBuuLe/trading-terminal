@@ -173,6 +173,22 @@ export const alertEvents = pgTable(
   (t) => [index("alert_events_fired").on(t.firedAt)],
 );
 
+/** Tradable US equities from Alpaca (/v2/assets), for symbol search/validation. Synced daily. */
+export const assets = pgTable(
+  "assets",
+  {
+    symbol: text("symbol").primaryKey(),
+    name: text("name").notNull(),
+    exchange: text("exchange").notNull(),
+    tradable: boolean("tradable").notNull(),
+    fractionable: boolean("fractionable").notNull().default(false),
+    shortable: boolean("shortable").notNull().default(false),
+    easyToBorrow: boolean("easy_to_borrow").notNull().default(false),
+    updatedAt: tsz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("assets_name").on(t.name)],
+);
+
 // ---------- infrastructure ----------
 
 /** Shared API response cache (survives across serverless invocations). */

@@ -1,0 +1,6 @@
+import { route } from "@/server/api";
+import { getAccountSummary } from "@/server/account";
+
+export const dynamic = "force-dynamic";
+
+export const GET = route(async () => Response.json(await getAccountSummary()));

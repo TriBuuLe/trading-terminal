@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { averageExpenses, expenseInMonth } from "@/lib/planner/core";
-import { yearSummary } from "@/lib/planner/summary";
+import { merchantName, yearSummary } from "@/lib/planner/summary";
 import type { Profile } from "@/lib/planner/types";
 
 const profile: Profile = {
@@ -82,5 +82,39 @@ describe("year summary (from transactions)", () => {
     const t = yearSummary({ profile, txs: [...many("06", 20), ...many("07", 2), ...many("08", 20)], year: 2026, today: "2026-11-05" });
     expect(t.fullMonths).toEqual(["2026-06", "2026-08"]);
     expect(t.dataChecks[0]).toMatch(/2026-07: only 2 transaction/);
+  });
+});
+
+describe("breakdown by merchant", () => {
+  it("readable merchant names to group by", () => {
+    expect(merchantName("AplPay PUBLIX BOCA RATON FL")).toBe("Publix");
+    expect(merchantName("BEST BUY ROCK HILL SC")).toBe("Best Buy");
+    expect(merchantName("LA FITNESS 10/02 PURCHASE IRVINE CA")).toBe("La Fitness");
+    expect(merchantName("AplPay TST* TIN ROOFDELRAY BEACH FL")).toBe("Tin Roofdelray");
+    expect(merchantName("Zelle payment to Akshit Kurani for July Rent;")).toBe("Zelle to Akshit Kurani");
+    expect(merchantName("RMTLY* B2044 11/30 PMNT SENT SEATTLE WA")).toBe("Remitly");
+    expect(merchantName("APPLE.COM/BILL INTERNET CHARGE CA")).toBe("Apple");
+    expect(merchantName("UBER *EATS HELP.U 10/25 PURCHASE")).toBe("Uber Eats");
+  });
+  it("each category lists its merchants and every transaction; top merchants across everything", () => {
+    const s = yearSummary({
+      profile,
+      year: 2026,
+      today: "2026-11-05",
+      txs: [
+        { date: "2026-09-05", description: "SUSHI ZEN", amount: -40, category: "Dining out" },
+        { date: "2026-09-20", description: "SUSHI ZEN", amount: -60, category: "Dining out" },
+        { date: "2026-09-21", description: "AplPay TACO BELL 123", amount: -12, category: "Dining out" },
+        { date: "2026-10-04", description: "BEST BUY ROCK HILL SC", amount: -2995, category: "Shopping" },
+        { date: "2026-10-05", description: "BEST BUY ROCK HILL SC", amount: 100, category: "Shopping" }, // refund
+      ],
+    });
+    const dining = s.categories.find((c) => c.category === "Dining out")!;
+    expect(dining.merchants).toEqual([
+      { name: "Sushi Zen", total: 100, count: 2, category: "Dining out" },
+      { name: "Taco Bell", total: 12, count: 1, category: "Dining out" },
+    ]);
+    expect(dining.txs.map((t) => t.amount)).toEqual([60, 40, 12]);
+    expect(s.topMerchants[0]).toEqual({ name: "Best Buy", total: 2895, count: 2, category: "Shopping" });
   });
 });

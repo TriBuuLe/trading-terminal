@@ -104,6 +104,8 @@ function YearView({ s }: { s: YearSummary }) {
         />
       </div>
 
+      <Breakdown s={s} />
+
       <MonthChart s={s} />
 
       <div className="grid gap-3 lg:grid-cols-2">
@@ -217,14 +219,12 @@ function IncomeSources({ sources, total }: { sources: IncomeSource[]; total: num
 const TONE: Record<CategoryRow["status"], "down" | "up" | "info" | "warn" | "muted"> = { over: "down", under: "up", "on track": "info", "no budget": "warn", "no transactions": "muted" };
 
 function CategoryTable({ s }: { s: YearSummary }) {
-  const [open, setOpen] = useState<string | null>(null);
   const last = s.fullMonths.at(-1);
   const n = s.fullMonths.length;
   return (
-    <Card title={`Spending by category (${s.year})`}>
+    <Card title={`Compared with your budget (${s.year})`}>
       <p className="mb-2 text-[11px] text-muted-foreground">
-        Every category is its own row. <b>Avg/month</b> is over the {n} full month{n === 1 ? "" : "s"} you have data for; <b>Budget/month</b> is your budget line for those same months
-        (lines with dates are averaged). Click a row for its biggest purchases.
+        <b>Avg/month</b> is over the {n} full month{n === 1 ? "" : "s"} you have data for; <b>Budget/month</b> is your budget line for those same months (lines with dates are averaged).
       </p>
       <div className="overflow-x-auto">
         <table className="num w-full text-xs">
@@ -243,7 +243,7 @@ function CategoryTable({ s }: { s: YearSummary }) {
           <tbody>
             {s.categories.map((c) => (
               <Fragment key={c.category}>
-                <tr className="cursor-pointer border-t border-border/50 text-right hover:bg-accent/30" onClick={() => setOpen(open === c.category ? null : c.category)}>
+                <tr className="border-t border-border/50 text-right">
                   <td className="py-1 text-left font-sans">{c.category}</td>
                   <td>{c.status === "no transactions" ? "—" : money(c.total)}</td>
                   <td>{c.status === "no transactions" ? "—" : whole(c.avgPerMonth)}</td>
@@ -264,13 +264,6 @@ function CategoryTable({ s }: { s: YearSummary }) {
                     <Tag tone={TONE[c.status]}>{c.status}</Tag>
                   </td>
                 </tr>
-                {open === c.category && c.top.length > 0 && (
-                  <tr>
-                    <td colSpan={8} className="pb-2 pl-3 text-left text-[11px] text-muted-foreground">
-                      Biggest: {c.top.map((t) => `${t.description.slice(0, 40)} ${money(t.amount)} (${t.date})`).join(" · ")}
-                    </td>
-                  </tr>
-                )}
               </Fragment>
             ))}
             <tr className="border-t border-border text-right font-medium">
@@ -287,6 +280,98 @@ function CategoryTable({ s }: { s: YearSummary }) {
         <b>over / under</b> = your monthly average is more than 10% above / below the budget line. <b>no budget</b> = you spend on it but have no budget line (add one in My finances).{" "}
         <b>no transactions</b> = budgeted, but nothing imported (paid from an account you haven&apos;t imported?).
       </p>
+    </Card>
+  );
+}
+
+/** Where the money went: one line per category with its total; click for merchants and every transaction. */
+function Breakdown({ s }: { s: YearSummary }) {
+  const rows = s.categories.filter((c) => c.total > 0);
+  const [open, setOpen] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
+  const max = Math.max(1, ...rows.map((c) => c.total));
+  return (
+    <Card title={`Where your ${money(s.spending.actual, { whole: true })} went (${s.year})`}>
+      <div className="divide-y divide-border/50">
+        {rows.map((c) => {
+          const isOpen = open === c.category;
+          return (
+            <div key={c.category}>
+              <button
+                type="button"
+                aria-expanded={isOpen}
+                onClick={() => {
+                  setOpen(isOpen ? null : c.category);
+                  setAll(false);
+                }}
+                className="grid w-full grid-cols-[9rem_1fr_6.5rem_3rem_5.5rem] items-center gap-3 py-1.5 text-left text-xs hover:bg-accent/30"
+              >
+                <span className="truncate font-medium">
+                  <span className="mr-1 inline-block w-3 text-muted-foreground">{isOpen ? "▾" : "▸"}</span>
+                  {c.category}
+                </span>
+                <span className="h-2.5 overflow-hidden rounded-sm bg-secondary">
+                  <span className="block h-full rounded-sm" style={{ width: `${(c.total / max) * 100}%`, background: c.status === "over" || c.status === "no budget" ? C.spent : C.bar }} />
+                </span>
+                <span className="num text-right font-medium">{money(c.total)}</span>
+                <span className="num text-right text-[11px] text-muted-foreground">{c.sharePct.toFixed(0)}%</span>
+                <span className="num text-right text-[11px] text-muted-foreground">{c.avgPerMonth === null ? "" : `${whole(c.avgPerMonth)}/mo`}</span>
+              </button>
+              {isOpen && (
+                <div className="mb-2 ml-4 grid gap-3 rounded-md bg-background/60 p-2 md:grid-cols-2">
+                  <div>
+                    <div className="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">By merchant</div>
+                    <table className="num w-full text-[11px]">
+                      <tbody>
+                        {c.merchants.slice(0, 12).map((m) => (
+                          <tr key={m.name} className="border-t border-border/40 first:border-0">
+                            <td className="py-0.5 font-sans">{m.name}</td>
+                            <td className="text-right text-muted-foreground">{m.count}×</td>
+                            <td className="w-24 text-right">{money(m.total)}</td>
+                            <td className="w-10 text-right text-muted-foreground">{c.total > 0 ? `${Math.round((m.total / c.total) * 100)}%` : ""}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {c.merchants.length > 12 && <p className="mt-1 text-[10px] text-muted-foreground">+ {c.merchants.length - 12} more</p>}
+                  </div>
+                  <div>
+                    <div className="mb-1 flex items-center justify-between text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                      <span>Transactions ({c.txs.length}), biggest first</span>
+                      {c.txs.length > 10 && (
+                        <button type="button" className="text-series-1 normal-case hover:underline" onClick={() => setAll(!all)}>
+                          {all ? "show fewer" : "show all"}
+                        </button>
+                      )}
+                    </div>
+                    <div className={cn(all && "max-h-72 overflow-auto")}>
+                      <table className="num w-full text-[11px]">
+                        <tbody>
+                          {(all ? c.txs : c.txs.slice(0, 10)).map((t, k) => (
+                            <tr key={k} className="border-t border-border/40 first:border-0">
+                              <td className="py-0.5 pr-2 text-muted-foreground">{t.date.slice(5)}</td>
+                              <td className="max-w-56 truncate font-sans">{t.description}</td>
+                              <td className={cn("w-24 text-right", t.amount < 0 && "text-up")}>{t.amount < 0 ? `refund ${money(-t.amount)}` : money(t.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div className="grid grid-cols-[9rem_1fr_6.5rem_3rem_5.5rem] gap-3 pt-1.5 text-xs font-semibold">
+          <span>Total</span>
+          <span />
+          <span className="num text-right">{money(s.spending.actual)}</span>
+          <span className="num text-right text-[11px] text-muted-foreground">100%</span>
+          <span className="num text-right text-[11px] text-muted-foreground">{s.spending.avgPerMonth === null ? "" : `${whole(s.spending.avgPerMonth)}/mo`}</span>
+        </div>
+      </div>
+      <p className="mt-2 text-[10px] text-muted-foreground">Click a category to see where it went. Orange = over budget or no budget line. Card payments and transfers aren&apos;t spending.</p>
     </Card>
   );
 }

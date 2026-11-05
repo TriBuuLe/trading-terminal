@@ -45,9 +45,12 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await expect(page.getByText(/of it paychecks\. Your income lines expected \$10,600/)).toBeVisible();
     await expect(page.getByText("Where the money came from")).toBeVisible();
     await expect(page.getByText(/Transportation: \$1,044 this year .*no budget line/)).toBeVisible(); // 607.34 + 420 (Air Canada, not yet re-sorted) + 2 × 8.12
-    // Each category is its own row; clicking shows its biggest purchases.
-    await page.getByRole("cell", { name: "Dining out", exact: true }).click();
-    await expect(page.getByText(/Biggest: SUSHI/)).toBeVisible();
+    // Where the money went: one line per category with its total; clicking shows merchants and transactions.
+    await expect(page.getByText(/Where your \$[\d,]+ went/)).toBeVisible();
+    const dining = page.getByRole("button", { name: /Dining out\s*\$300\.00/ });
+    await dining.click();
+    await expect(page.getByText("By merchant")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Sushi", exact: true })).toBeVisible();
     await page.screenshot({ path: "test-results/analysis.png", fullPage: true });
     // Transactions is storage/import only now.
     await page.getByRole("button", { name: "Transactions", exact: true }).click();

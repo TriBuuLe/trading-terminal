@@ -45,6 +45,17 @@ export interface CategoryRow {
   sharePct: number;
   status: RowStatus;
   top: { date: string; description: string; amount: number }[];
+  /** Where the money in this category went, biggest first. */
+  merchants: Merchant[];
+  /** Every transaction in this category this year, biggest first (refunds negative). */
+  txs: { date: string; description: string; amount: number }[];
+}
+
+export interface Merchant {
+  name: string;
+  total: number;
+  count: number;
+  category: string;
 }
 
 export interface MonthRow {
@@ -78,8 +89,52 @@ export interface YearSummary {
   spending: { actual: number; avgPerMonth: number | null; budgetPerMonth: number | null };
   saved: { actual: number; ratePct: number | null };
   categories: CategoryRow[];
+  /** Biggest merchants / people across all spending. */
+  topMerchants: Merchant[];
   attention: Attention[];
   dataChecks: string[];
+}
+
+const GENERIC = new Set(["the", "st", "sq", "tst", "aplpay", "pos", "debit", "purchase", "online", "www"]);
+const title = (w: string) => w.toLowerCase().replace(/(^|[\s\-./])\w/g, (c) => c.toUpperCase());
+
+/** A readable merchant name to group by: "AplPay PUBLIX BOCA RATON FL" → "Publix", "Zelle payment to Akshit Kurani for July Rent" → "Zelle to Akshit Kurani". */
+export function merchantName(description: string): string {
+  const d = description.trim();
+  const zelle = /zelle payment (to|from) ([a-z][a-z .'-]*?)(?: for |;| conf|$)/i.exec(d);
+  if (zelle) return `Zelle ${zelle[1]!.toLowerCase()} ${title(zelle[2]!.trim())}`;
+  if (/rmtly|remitly/i.test(d)) return "Remitly";
+  if (/apple\.?com|apple com bill/i.test(d)) return "Apple";
+  if (/\buber\b.*eats|uber \*?eats/i.test(d)) return "Uber Eats";
+  if (/\buber\b/i.test(d)) return "Uber";
+  if (/wire (type|out)|wire out/i.test(d)) return "Wire transfer";
+  if (/international transaction fee|foreign transaction fee/i.test(d)) return "Foreign transaction fees";
+  const head = d
+    .replace(/^((aplpay|sq ?\*|tst ?[*-]|pp\*|paypal ?\*)\s*)+/i, "")
+    .split(/ DES:| ID:| PURCHASE|#| \d{2}\/\d{2}|\*|,/i)[0]!
+    // "IBMBLDG500CAFDURHAM NC": keep the letters before the digits of the first word ("IBMBLDG")
+    .replace(/^([a-z]{3,})\d\S*/i, "$1")
+    .replace(/\S*\d\S*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = head.split(" ").filter((w) => w && !GENERIC.has(w.toLowerCase().replace(/[^a-z]/g, "")));
+  if (!words.length) return title(d.slice(0, 24));
+  // One distinctive word is usually the brand (PUBLIX, TARGET, AMAZON); short first words need the second (BEST BUY, LA FITNESS).
+  const name = words[0]!.replace(/[^a-z]/gi, "").length >= 6 ? words[0]! : words.slice(0, 2).join(" ");
+  return title(name.replace(/[,;:]+$/, ""));
+}
+
+function groupMerchants(tx: SummaryTx[]): Merchant[] {
+  const m = new Map<string, Merchant>();
+  for (const t of tx) {
+    const name = merchantName(t.description);
+    const key = `${t.category}|${name}`;
+    const g = m.get(key) ?? { name, total: 0, count: 0, category: t.category };
+    g.total -= t.amount;
+    g.count++;
+    m.set(key, g);
+  }
+  return [...m.values()].map((g) => ({ ...g, total: round2(g.total) })).sort((a, b) => b.total - a.total);
 }
 
 const PAYCHECK = /payroll|direct dep|salary|pay ?cheque|paycheck/i;
@@ -198,6 +253,8 @@ export function yearSummary(i: { profile: Profile; txs: SummaryTx[]; year: numbe
           .slice(0, 3)
           .filter((t) => t.amount < 0)
           .map((t) => ({ date: t.date, description: t.description, amount: round2(-t.amount) })),
+        merchants: groupMerchants(tx),
+        txs: [...tx].sort((a, b) => a.amount - b.amount).map((t) => ({ date: t.date, description: t.description, amount: round2(-t.amount) })),
       };
     })
     .sort((a, b) => b.total - a.total);
@@ -251,6 +308,7 @@ export function yearSummary(i: { profile: Profile; txs: SummaryTx[]; year: numbe
     },
     saved: { actual: round2(actualIncome - totalSpent), ratePct: actualIncome > 0 ? round2(((actualIncome - totalSpent) / actualIncome) * 100) : null },
     categories,
+    topMerchants: groupMerchants(spendTx).slice(0, 25),
     attention,
     dataChecks,
   };

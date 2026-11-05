@@ -68,30 +68,32 @@ const num = (s: string | undefined) => {
 
 /** Keyword rules → category. The user confirms or corrects every suggestion. */
 /** Paying off a credit card from your bank: a transfer between your own accounts, not income or spending. */
-export const CARD_PAYMENT = /payment.{0,20}thank ?you|mobile payment|online payment|autopay|auto pay|payment received|credit card payment|card payment/i;
+export const CARD_PAYMENT = /payment.{0,20}thank ?you|mobile payment|online payment|autopay|auto pay|payment received|credit card payment|card payment|american express.{0,12}pmt|\bach pmt\b|payment to crd/i;
 
 export const CATEGORY_RULES: [string, RegExp][] = [
   ["Transfers", CARD_PAYMENT],
   ["Income", /payroll|direct dep|salary|pay ?cheque|paycheck|deposit from/i],
-  ["Transfers", /e-?transfer|interac|transfer|zelle|venmo|paypal transfer/i],
+  ["Transfers", /e-?transfer|interac|transfer|zelle|venmo|paypal transfer|fid bkg|fidelity|moneyline|schwab|vanguard|robinhood|wealthsimple|questrade/i],
+  // "INTERNATIONAL TRANSACTION FEE … UBER CANADA" is a fee, not a ride
+  ["Fees & interest", /international transaction fee|foreign transaction fee|foreign exchange fee|\bfx fee/i],
   // Before rent/dining/transportation ("rent-a-car" is travel): flights, hotels, car rentals and trip bookings are travel, not commuting.
   [
     "Travel",
     /expedia|booking\.com|airbnb|vrbo|hotels\.com|priceline|kayak|trip\.com|hopper|\bhotel|marriott|hilton|hyatt|\bihg\b|holiday inn|best western|sheraton|westin|hostel|air canada|westjet|porter air|flair air|delta air|united air|united\.com|american air|\baa\.com|southwest air|southwest\.com|jetblue|spirit air|frontier air|alaska air|air france|british airways|lufthansa|klm\b|emirates|airlines?\b|amtrak|via rail|greyhound|flixbus|megabus|hertz|avis\b|enterprise rent|budget rent|national car|turo\b/i,
   ],
-  ["Rent", /\brent\b|property mgmt|landlord/i],
+  ["Rent", /\brent\b|property mgmt|landlord|\bapts?\b|apartment/i],
   ["Groceries", /grocer|loblaw|no frills|sobeys|metro\b|safeway|kroger|costco|walmart|whole foods|trader joe|freshco|food basics|aldi|harris teeter|food lion|publix/i],
   [
     "Dining out",
-    /restaurant|cafe|cafeteria|bldg\d*caf|coffee|starbucks|tim hortons|second cup|dunkin|mcdonald|uber ?eats|doordash|grubhub|skip ?the|pizza|sushi|burger|chipotle|subway|taqueria|taco|\bpho\b|pho\b|ramen|thai|grill|kitchen|bistro|\bdeli\b|bakery|boba|bubble tea|wings|chick-fil-a|wendy|panera/i,
+    /restaurant|cafe|cafeteria|bldg\d*caf|coffee|starbucks|tim hortons|second cup|dunkin|mcdonald|uber ?\*?eats|noodle|soba\b|mazesoba|\btst-|tahini|doordash|grubhub|skip ?the|pizza|sushi|burger|chipotle|subway|taqueria|taco|\bpho\b|pho\b|ramen|thai|grill|kitchen|bistro|\bdeli\b|bakery|boba|bubble tea|wings|chick-fil-a|wendy|panera/i,
   ],
+  ["Subscriptions", /uber \*?one|netflix|spotify|disney|apple\.com|icloud|prime video|youtube premium|crave|hulu|patreon|anthropic|claude\.ai|openai|chatgpt|github|notion|adobe|microsoft 365|google one|google storage/i],
   ["Transportation", /\buber\b|lyft|presto|transit|ttc|go transit|shell|esso|petro|chevron|exxon|parking|gas station|\bbp\b|sunoco|wawa/i],
-  ["Phone & internet", /rogers|bell\b|telus|fido|koodo|freedom mobile|verizon|at&t|t-mobile|comcast|xfinity|spectrum/i],
+  ["Phone & internet", /rogers|bell\b|telus|fido|koodo|freedom mobile|verizon|at&t|\batt\b|t-mobile|comcast|xfinity|spectrum/i],
   ["Utilities", /hydro|electric|enbridge|water|utility|duke energy/i],
-  ["Subscriptions", /netflix|spotify|disney|apple\.com|icloud|prime video|youtube premium|crave|hulu|patreon|anthropic|claude\.ai|openai|chatgpt|github|notion|adobe|microsoft 365|google one|google storage/i],
   ["Entertainment", /cinema|regal|\bamc\b|cineplex|theatre|theater|steam|playstation|xbox|nintendo|ticketmaster|eventbrite|bowling/i],
   ["Shopping", /amazon|best buy|ikea|winners|h&m|uniqlo|shopify|etsy|target\b|nike|adidas|zara|lululemon|sephora|e-commerce|ulta|tommy hilfiger|ralph lauren|calvin klein|old navy|\bgap\b|nordstrom|macy|tj ?maxx|marshalls|ross stores|kohl|foot locker|urban outfitters|american eagle|abercrombie|hollister/i],
-  ["Health", /pharma|shoppers drug|rexall|cvs|walgreens|clinic|dental|physio/i],
+  ["Health", /fitness|\bgym\b|ymca|pharma|shoppers drug|rexall|cvs|walgreens|clinic|dental|physio/i],
   ["Education", /tuition|university|college|bookstore|coursera/i],
   ["Insurance", /insurance|assurance/i],
   ["Fees & interest", /interest charge|service fee|nsf|overdraft|annual fee/i],
@@ -125,21 +127,26 @@ export const flipSigns = <T extends { amount: number }>(rows: T[]): T[] => rows.
 export function importCsv(text: string): { rows: ParsedTx[]; skipped: number; columns: Record<string, number>; looksLikeCard: boolean } {
   const grid = parseCsv(text);
   if (grid.length < 2) return { rows: [], skipped: 0, columns: {}, looksLikeCard: false };
-  const header = grid[0]!.map((h) => h.trim().toLowerCase());
-  const find = (...names: RegExp[]) => header.findIndex((h) => names.some((n) => n.test(h)));
-  const cols = {
-    date: find(/date/),
-    description: find(/desc|merchant|payee|details|name|memo/),
-    amount: find(/^amount$|amount \(|^value$|^cad\$?$|^usd\$?$/),
-    debit: find(/debit|withdraw|money out|outflow/),
-    credit: find(/credit|deposit|money in|inflow/),
+  // Some banks (e.g. Bank of America) put a summary block above the real header: use the first row that has the columns.
+  const columnsOf = (row: string[]) => {
+    const header = row.map((h) => h.trim().toLowerCase());
+    const find = (...names: RegExp[]) => header.findIndex((h) => names.some((n) => n.test(h)));
+    return {
+      date: find(/date/),
+      description: find(/desc|merchant|payee|details|name|memo/),
+      amount: find(/^amount$|amount \(|^value$|^cad\$?$|^usd\$?$/),
+      debit: find(/debit|withdraw|money out|outflow/),
+      credit: find(/credit|deposit|money in|inflow/),
+    };
   };
-  if (cols.date < 0 || cols.description < 0 || (cols.amount < 0 && cols.debit < 0 && cols.credit < 0)) {
-    throw new Error("Couldn't find date, description and amount columns. The first row must be a header (e.g. Date, Description, Amount).");
-  }
+  const ok = (c: ReturnType<typeof columnsOf>) => c.date >= 0 && c.description >= 0 && (c.amount >= 0 || c.debit >= 0 || c.credit >= 0);
+  const headerAt = grid.slice(0, 30).findIndex((r) => ok(columnsOf(r)));
+  if (headerAt < 0) throw new Error("Couldn't find a header row with date, description and amount columns (e.g. Date, Description, Amount).");
+  const cols = columnsOf(grid[headerAt]!);
   const rows: ParsedTx[] = [];
   let skipped = 0;
-  for (const r of grid.slice(1)) {
+  for (const r of grid.slice(headerAt + 1)) {
+    if (/^(beginning|ending|opening|closing) balance/i.test((r[cols.description] ?? "").trim())) continue; // balance lines, not transactions
     const date = parseDate(r[cols.date] ?? "");
     const desc = cleanDescription(r[cols.description] ?? "");
     let amount: number | null = null;

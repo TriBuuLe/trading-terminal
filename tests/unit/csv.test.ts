@@ -77,3 +77,57 @@ describe("credit-card statements", () => {
     expect(looksLikeCardStatement([], false)).toBe(false);
   });
 });
+
+describe("Bank of America checking export (summary block above the header)", () => {
+  const csv = [
+    "Description,,Summary Amt.",
+    'Beginning balance as of 09/25/2026,,"901.62"',
+    'Total credits,,"7,172.34"',
+    'Total debits,,"-4,304.36"',
+    'Ending balance as of 10/26/2026,,"3,769.60"',
+    "",
+    "Date,Description,Amount,Running Bal.",
+    '09/25/2026,Beginning balance as of 09/25/2026,,"901.62"',
+    '09/25/2026,"ACME 3141 DES:PAYROLL ID:1000200669 INDN:Sam Doe CO ID:2130871985 PPD PMT INFO:TRN*1*1000200669\\","1,325.48","2,227.10"',
+    '09/28/2026,"Zelle payment to Alex Kim for "Trip"; Conf# utu3vhdzp","-41.85","2,185.25"',
+    '10/01/2026,"APTS Le DES:APTS Le ID:ST-V9E1T9U6E7M6 INDN:SAM DOE CO ID:1800948598 WEB","-880.00","1,305.25"',
+    '10/01/2026,"AMERICAN EXPRESS DES:ACH PMT ID:M0006 INDN:SAM DOE CO ID:1133133497 WEB","-310.67","994.58"',
+    '10/02/2026,"LA FITNESS 10/02 PURCHASE IRVINE CA","-42.99","2,181.36"',
+    '10/07/2026,"FID BKG SVC LLC DES:MONEYLINE ID:Z53603640 QIQRM INDN:SAM DOE CO ID:1035141375 WEB","508.99","2,105.66"',
+    '10/13/2026,"Mobile Banking payment to CRD 5590 Confirmation# zpkbwmbih","-16.28","3,414.85"',
+    '10/14/2026,"UBER CANADA/UBERE 10/12 PURCHASE TORONTO ON","-16.76","2,196.10"',
+    '10/14/2026,"MEGUMI MAZESOBA 10/13 PURCHASE TORONTO ON","-18.87","2,172.55"',
+    '10/14/2026,"INTERNATIONAL TRANSACTION FEE 10/13 UBER CANADA/UBERE TORONTO ON","-0.50","2,170.52"',
+    '10/16/2026,"TST-Tahinis - 190 10/15 MOBILE PURCHASE Hamilton ON","-7.98","3,422.55"',
+    '10/21/2026,"ATT DES:PAYMENT ID:356010002EPAYQ INDN:SAM DOE CO ID:9864031004 PPD","-57.03","2,780.62"',
+    '10/26/2026,"UBER *ONE MEMBE 10/23 PURCHASE 8665761039 CA","-9.99","3,807.37"',
+    '10/26/2026,"UBER *EATS HELP.U 10/25 PURCHASE 8005928996 CA","-26.77","3,769.60"',
+  ].join("\n");
+  const r = importCsv(csv);
+
+  it("finds the header below the summary and skips balance lines", () => {
+    expect(r.rows).toHaveLength(14);
+    expect(r.skipped).toBe(0);
+    expect(r.looksLikeCard).toBe(false);
+    expect(r.rows[0]).toMatchObject({ date: "2026-09-25", amount: 1325.48, category: "Income" });
+  });
+
+  it("sorts checking-account rows (card payments and brokerage moves are transfers)", () => {
+    expect(r.rows.map((x) => x.category)).toEqual([
+      "Income",
+      "Transfers", // Zelle
+      "Rent", // APTS
+      "Transfers", // Amex ACH payment: the card's own statement has the purchases
+      "Health", // LA Fitness
+      "Transfers", // Fidelity MoneyLine
+      "Transfers", // payment to card 5590
+      "Transportation",
+      "Dining out",
+      "Fees & interest",
+      "Dining out", // Toast POS
+      "Phone & internet",
+      "Subscriptions", // Uber One
+      "Dining out", // Uber Eats
+    ]);
+  });
+});

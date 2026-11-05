@@ -429,7 +429,14 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
   const yr = useQuery({ queryKey: ["year"], queryFn: () => api<{ income: YearIncome } | null>("/api/finances/year") });
   const inc = yr.data?.income ?? null;
   const covered = inc?.coveredThrough ?? null;
-  const gotFor = (id: string) => inc?.lines.find((l) => l.id === id) ?? null;
+  // Saved lines: the server matched their deposits. New (unsaved) lines: use their employer's deposits so the row adds up before you save.
+  const gotFor = (id: string) => {
+    const saved = inc?.lines.find((l) => l.id === id);
+    if (saved && (saved.received > 0 || saved.flag)) return saved;
+    const employer = patternFor(id)?.employer;
+    const u = employer ? inc?.unlinked.find((x) => x.employer === employer) : undefined;
+    return u ? { received: u.received, deposits: u.deposits, estimated: 0, estimatedDates: [], flag: null } : (saved ?? null);
+  };
   const aheadTotal = p.incomes.reduce((t, i) => t + aheadFor(i, covered, year).amount, 0);
   const patternFor = (id: string) => (pays.data ?? []).find((x) => matchIncomeLine(x, p.incomes)?.id === id) ?? null;
   const unmatched = (pays.data ?? []).filter((x) => !matchIncomeLine(x, p.incomes));

@@ -5,7 +5,8 @@ const money = z.number().finite().min(0).max(1e9);
 const ym = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM");
 const id = z.string().min(1).max(40);
 
-export const incomeSchema = z.object({
+export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be YYYY-MM-DD");
+const incomeSchema = z.object({
   id,
   name: z.string().trim().min(1).max(60),
   amount: money,
@@ -17,6 +18,14 @@ export const incomeSchema = z.object({
   endMonth: ym.nullable().optional(),
   annualRaisePct: z.number().min(0).max(50).optional(),
   repeatsYearly: z.boolean().optional(),
+  employmentStart: isoDate.nullable().optional(),
+  employmentEnd: isoDate.nullable().optional(),
+  firstPayDate: isoDate.nullable().optional(),
+  lastPayDate: isoDate.nullable().optional(),
+  payDay: z.number().int().min(0).max(6).optional(),
+  payEvery: z.enum(["weekly", "biweekly"]).optional(),
+  workdays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  periodEndsDaysBefore: z.number().int().min(0).max(30).optional(),
 });
 export const expenseSchema = z.object({
   id,
@@ -92,6 +101,9 @@ export function profileProblems(p: z.infer<typeof profileSchema>): { path: strin
   const out: { path: string; message: string }[] = [];
   for (const i of p.incomes) {
     // (A repeating term may wrap across New Year, e.g. Nov–Feb.)
+    if ((i.employmentStart && i.employmentEnd && i.employmentEnd < i.employmentStart) || (i.firstPayDate && i.lastPayDate && i.lastPayDate < i.firstPayDate)) {
+      out.push({ path: `income:${i.id}`, message: `“${i.name}” ends before it starts, so it never counts. Fix the dates.` });
+    }
     if (!i.repeatsYearly && i.startMonth && i.endMonth && i.endMonth < i.startMonth) {
       out.push({ path: `income:${i.id}`, message: `“${i.name}” ends (${i.endMonth}) before it starts (${i.startMonth}), so it never counts. Fix the dates.` });
     }

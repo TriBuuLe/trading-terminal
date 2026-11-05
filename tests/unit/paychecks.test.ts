@@ -1,0 +1,97 @@
+import { describe, expect, it } from "vitest";
+import { incomeInMonth, nextPaycheck, paychecks, paydays } from "@/lib/planner/core";
+import { detectPaychecks, lineMatchesPattern, matchIncomeLine } from "@/lib/planner/paychecks";
+import type { IncomeStream } from "@/lib/planner/types";
+
+const ibm: IncomeStream = { id: "i", name: "IBM", amount: 1325.47, frequency: "weekly", kind: "coop", basis: "net", payDay: 5, firstPayDate: "2026-09-11", lastPayDate: "2026-12-11" };
+
+describe("exact pay schedules", () => {
+  it("counts every Friday in the month (Fridays in 2026: Sep 11/18/25, Oct 2/9/16/23/30, Dec 4/11 until the last paycheck)", () => {
+    expect(paydays(ibm, "2026-09-01", "2026-09-30")).toEqual(["2026-09-11", "2026-09-18", "2026-09-25"]);
+    expect(incomeInMonth([ibm], "2026-10")).toBeCloseTo(5 * 1325.47, 6); // 5 Fridays
+    expect(incomeInMonth([ibm], "2026-11")).toBeCloseTo(4 * 1325.47, 6); // Nov 6/13/20/27
+    expect(incomeInMonth([ibm], "2026-12")).toBeCloseTo(2 * 1325.47, 6); // Dec 4 and 11, then it ends
+    expect(incomeInMonth([ibm], "2027-01")).toBe(0);
+  });
+
+  it("from employment dates: first payday on/after the start; a partial first week is prorated by workdays", () => {
+    // Start Tue Sep 8: the Sep 11 paycheck covers Sat Sep 5 – Fri Sep 11, of which Tue–Fri (4 of 5 workdays) were worked → 1,325.47 × 4/5
+    const s: IncomeStream = { ...ibm, firstPayDate: null, lastPayDate: null, employmentStart: "2026-09-08" };
+    expect(paychecks(s, "2026-09-01", "2026-09-18")).toEqual([
+      { date: "2026-09-11", amount: 1060.38 },
+      { date: "2026-09-18", amount: 1325.47 },
+    ]);
+  });
+
+  it("biweekly skips every other week", () => {
+    const modmed: IncomeStream = { ...ibm, frequency: "biweekly", firstPayDate: "2026-05-29", lastPayDate: "2026-08-21", amount: 1048.05 };
+    expect(paydays(modmed, "2026-05-01", "2026-08-31")).toEqual(["2026-05-29", "2026-06-12", "2026-06-26", "2026-07-10", "2026-07-24", "2026-08-07", "2026-08-21"]);
+  });
+
+  describe("hourly: rate × hours per workday × workdays worked in each pay period", () => {
+    // $20/h, 30 h/week over Mon–Fri = 6 h/day; starts Thu Oct 1; paid Fridays
+    const cafe: IncomeStream = { id: "h", name: "Cafe", amount: 20, frequency: "hourly", hoursPerWeek: 30, payEvery: "weekly", kind: "salary", payDay: 5, employmentStart: "2026-10-01" };
+    it("partial first week", () => {
+      // Oct 2: Thu+Fri = 2 days × 6 h × $20 = 240; Oct 9, 16, 23, 30: 5 days = 600 each → 2,640
+      expect(paychecks(cafe, "2026-10-01", "2026-10-09").map((x) => x.amount)).toEqual([240, 600]);
+      expect(incomeInMonth([cafe], "2026-10")).toBe(2640);
+    });
+    it("pay period ending before payday (paid a week behind)", () => {
+      // Period ends 6 days before payday (Saturday). First payday whose period includes Oct 1: Oct 9 (Sep 27 – Oct 3: Thu+Fri = 240),
+      // then Oct 16, 23, 30 at 600 → 2,040
+      expect(incomeInMonth([{ ...cafe, periodEndsDaysBefore: 6 }], "2026-10")).toBe(2040);
+    });
+    it("employment end: last partial week, then nothing", () => {
+      // Ends Wed Oct 14: Oct 16 covers Oct 10–16, worked Mon–Wed = 3 days = 360 → 240 + 600 + 360
+      const ending = { ...cafe, employmentEnd: "2026-10-14" };
+      expect(incomeInMonth([ending], "2026-10")).toBe(1200);
+      expect(incomeInMonth([ending], "2026-11")).toBe(0);
+    });
+    it("every two weeks and custom workdays", () => {
+      // Oct 2 (Sep 19 – Oct 2: Oct 1–2 = 240), Oct 16 (10 workdays = 1,200), Oct 30 (1,200)
+      expect(incomeInMonth([{ ...cafe, payEvery: "biweekly" }], "2026-10")).toBe(2640);
+      // Weekends only, 16 h/week = 8 h/day: Oct 2 paycheck covers Sep 26 – Oct 2 but work starts Oct 1 → 0 days → no paycheck; Oct 9 covers Sat 3 + Sun 4 = 2 × 8 × 20 = 320
+      const weekend = { ...cafe, hoursPerWeek: 16, workdays: [0, 6] };
+      expect(paychecks(weekend, "2026-10-01", "2026-10-09")).toEqual([{ date: "2026-10-09", amount: 320 }]);
+    });
+  });
+
+  it("the next expected paycheck", () => {
+    expect(nextPaycheck([ibm], "2026-11-05")).toEqual({ date: "2026-11-06", amount: 1325.47, name: "IBM" });
+    expect(nextPaycheck([ibm], "2026-12-12")).toBeNull(); // after the last one
+  });
+
+  it("lines without exact dates still work by month", () => {
+    expect(incomeInMonth([{ id: "m", name: "Job", amount: 4000, frequency: "monthly", kind: "salary", startMonth: "2026-05", endMonth: "2026-08" }], "2026-06")).toBe(4000);
+  });
+});
+
+describe("paychecks found in transactions", () => {
+  const fridays = ["2026-09-11", "2026-09-18", "2026-09-25", "2026-10-02", "2026-10-09", "2026-10-16", "2026-10-23"];
+  const txs = [
+    ...fridays.map((date) => ({ date, description: "IBM 3141 DES:PAYROLL ID:100", amount: 1325.47, category: "Income" })),
+    ...["2026-05-29", "2026-06-12", "2026-06-26", "2026-07-10"].map((date) => ({ date, description: "MODERNIZING MEDI DES:PAYROLL", amount: 1048.05, category: "Income" })),
+    { date: "2026-10-05", description: "Zelle payment from MAX", amount: 16, category: "Income" }, // not a paycheck
+    { date: "2026-10-26", description: "UBER EATS", amount: -26.77, category: "Dining out" }, // newest transaction
+  ];
+  const found = detectPaychecks(txs);
+
+  it("employer, how often, which weekday, latest amount, still coming or ended", () => {
+    expect(found.map((x) => [x.employer, x.frequency, x.payDay, x.amount, x.count, x.first, x.last, x.ongoing])).toEqual([
+      ["IBM", "weekly", 5, 1325.47, 7, "2026-09-11", "2026-10-23", true],
+      ["Modernizing Medi", "biweekly", 5, 1048.05, 4, "2026-05-29", "2026-07-10", false],
+    ]);
+    expect(found[0]!.line).toMatchObject({ frequency: "weekly", payDay: 5, firstPayDate: "2026-09-11", lastPayDate: null, basis: "net" });
+  });
+
+  it("matches your existing lines by name, or by the same months", () => {
+    const lines: IncomeStream[] = [
+      { id: "a", name: "IBM", amount: 5300, frequency: "monthly", kind: "coop", startMonth: "2026-09", endMonth: "2026-12" },
+      { id: "b", name: "ModMed", amount: 4000, frequency: "monthly", kind: "salary", startMonth: "2026-05", endMonth: "2026-08" },
+    ];
+    expect(matchIncomeLine(found[0]!, lines)?.id).toBe("a");
+    expect(matchIncomeLine(found[1]!, lines)?.id).toBe("b"); // "ModMed" ≠ "Modernizing Medi", but the same months
+    expect(lineMatchesPattern(lines[0]!, found[0]!)).toBe(false);
+    expect(lineMatchesPattern({ id: "a", ...found[0]!.line }, found[0]!)).toBe(true);
+  });
+});

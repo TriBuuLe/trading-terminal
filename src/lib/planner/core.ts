@@ -24,14 +24,104 @@ export function monthsBetween(from: YearMonth, to: YearMonth): number {
   return (y2 - y1) * 12 + (m2 - m1);
 }
 
-/** Take-home income in a given month, honoring co-op/school windows and yearly raises. */
+const dayMs = 86_400_000;
+const utc = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
+const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
+const onOrAfter = (t: number, weekday: number) => t + ((((weekday - new Date(t).getUTCDay()) % 7) + 7) % 7) * dayMs;
+
+/**
+ * A paycheck schedule: weekly or every two weeks on `payDay`, or hourly pay with
+ * `payEvery`. Needs a first paycheck date or an employment start date.
+ */
+export function paySchedule(s: IncomeStream): { periodDays: 7 | 14; hourly: boolean } | null {
+  if (!s.firstPayDate && !s.employmentStart) return null;
+  if (s.frequency === "weekly") return { periodDays: 7, hourly: false };
+  if (s.frequency === "biweekly") return { periodDays: 14, hourly: false };
+  if (s.frequency === "hourly" && s.payEvery) return { periodDays: s.payEvery === "weekly" ? 7 : 14, hourly: true };
+  return null;
+}
+
+/** Workdays (default Mon–Fri) between two dates inclusive, also inside the employment dates. */
+function workdaysIn(s: IncomeStream, from: number, to: number): { worked: number; all: number } {
+  const days = s.workdays?.length ? s.workdays : [1, 2, 3, 4, 5];
+  const lo = s.employmentStart ? utc(s.employmentStart) : -Infinity;
+  const hi = s.employmentEnd ? utc(s.employmentEnd) : Infinity;
+  let worked = 0;
+  let all = 0;
+  for (let t = from; t <= to; t += dayMs) {
+    if (!days.includes(new Date(t).getUTCDay())) continue;
+    all++;
+    if (t >= lo && t <= hi) worked++;
+  }
+  return { worked, all };
+}
+
+/**
+ * Every paycheck (date and take-home/gross amount per the line's basis) between
+ * `from` and `to`. A paycheck on payday P pays for the period ending
+ * `periodEndsDaysBefore` days before P. With employment dates, partial first/last
+ * periods are prorated by the workdays inside the employment dates; hourly pay is
+ * rate × hours per workday × workdays worked in the period.
+ */
+export function paychecks(s: IncomeStream, from: string, to: string): { date: string; amount: number }[] {
+  const sch = paySchedule(s);
+  if (!sch) return [];
+  const payDay = s.payDay ?? 5;
+  const lag = (s.periodEndsDaysBefore ?? 0) * dayMs;
+  const first = s.firstPayDate ? utc(s.firstPayDate) : onOrAfter(utc(s.employmentStart!) + lag, payDay);
+  const last = s.lastPayDate ? utc(s.lastPayDate) : s.employmentEnd ? onOrAfter(utc(s.employmentEnd) + lag, payDay) : Infinity;
+  const lo = utc(from);
+  const hi = Math.min(last, utc(to));
+  const days = s.workdays?.length ? s.workdays : [1, 2, 3, 4, 5];
+  const out: { date: string; amount: number }[] = [];
+  for (let t = first; t <= hi; t += sch.periodDays * dayMs) {
+    if (t < lo) continue;
+    const end = t - lag;
+    const w = workdaysIn(s, end - (sch.periodDays - 1) * dayMs, end);
+    const amount = sch.hourly
+      ? s.amount * ((s.hoursPerWeek ?? 40) / days.length) * w.worked
+      : s.employmentStart || s.employmentEnd
+        ? s.amount * (w.all ? w.worked / w.all : 1)
+        : s.amount;
+    if (amount > 0) out.push({ date: iso(t), amount: round2(amount) });
+  }
+  return out;
+}
+
+/** Paycheck dates only. */
+export const paydays = (s: IncomeStream, from: string, to: string) => paychecks(s, from, to).map((p) => p.date);
+
+/** The next expected paycheck on or after `today` (an expectation from the schedule, not a deposit). */
+export function nextPaycheck(streams: IncomeStream[], today: string): { date: string; amount: number; name: string } | null {
+  const next = streams
+    .flatMap((s) => {
+      const p = paychecks(s, today, iso(utc(today) + 15 * dayMs))[0];
+      return p ? [{ ...p, name: s.name }] : [];
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return next[0] ?? null;
+}
+
+const lastDay = (month: YearMonth) => iso(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0));
+
+/** Take-home income in a given month, honoring co-op/school windows, exact pay schedules and yearly raises. */
 export function incomeInMonth(streams: IncomeStream[], month: YearMonth): number {
   let total = 0;
   for (const s of streams) {
-    if (!isActive(s, month)) continue;
-    let amt = monthlyEquivalent(s.amount, s.frequency, s.hoursPerWeek);
-    if (s.annualRaisePct && s.startMonth) {
-      const years = Number(month.slice(0, 4)) - Number(s.startMonth.slice(0, 4));
+    const sch = paySchedule(s);
+    const startYm = (s.employmentStart ?? s.firstPayDate)?.slice(0, 7) ?? s.startMonth;
+    let amt: number;
+    if (sch) amt = paychecks(s, `${month}-01`, lastDay(month)).reduce((a, p) => a + p.amount, 0);
+    else if (s.employmentStart || s.employmentEnd) {
+      // monthly / semimonthly / annual with employment dates: active by month
+      if ((s.employmentStart && month < s.employmentStart.slice(0, 7)) || (s.employmentEnd && month > s.employmentEnd.slice(0, 7))) continue;
+      amt = monthlyEquivalent(s.amount, s.frequency, s.hoursPerWeek);
+    } else {
+      if (!isActive(s, month)) continue;
+      amt = monthlyEquivalent(s.amount, s.frequency, s.hoursPerWeek);
+    }
+    if (s.annualRaisePct && startYm) {
+      const years = Number(month.slice(0, 4)) - Number(startYm.slice(0, 4));
       if (years > 0) amt *= (1 + s.annualRaisePct / 100) ** years;
     }
     total += amt;

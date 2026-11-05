@@ -22,6 +22,23 @@ export interface IncomeStream {
   annualRaisePct?: number;
   /** Same calendar months every year (e.g. a Sep–Dec co-op term each fall). */
   repeatsYearly?: boolean;
+  /**
+   * Exact schedule (weekly / biweekly, or hourly paid weekly / biweekly): one paycheck
+   * every `payDay` (0 = Sunday … 5 = Friday), so a month with 5 Fridays gets 5.
+   * Dates are YYYY-MM-DD and override startMonth/endMonth when set.
+   */
+  employmentStart?: string | null;
+  employmentEnd?: string | null;
+  /** Known first / last paycheck; otherwise derived from the employment dates. */
+  firstPayDate?: string | null;
+  lastPayDate?: string | null;
+  payDay?: number;
+  /** For hourly pay: how often you're paid. */
+  payEvery?: "weekly" | "biweekly";
+  /** Days you work (0 = Sunday … 6 = Saturday); default Mon–Fri. Used for partial periods and hourly pay. */
+  workdays?: number[];
+  /** The pay period ends this many days before payday (0 = on payday). */
+  periodEndsDaysBefore?: number;
 }
 
 export interface Expense {

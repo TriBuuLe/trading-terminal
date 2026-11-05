@@ -233,7 +233,7 @@ export function yearSummary(i: { profile: Profile; txs: SummaryTx[]; year: numbe
       // A budget line with this exact name; an older free-text line name still matches (e.g. "Vacation" → Travel).
       const line = budgetNames.includes(cat) ? cat : matchPlanCategory(cat, budgetNames.filter((b) => !cats.includes(b)));
       const total = -sum(tx);
-      const avg = n ? -sum(tx.filter((t) => fullMonths.includes(monthOf(t)))) / n : null;
+      const avg = n && tx.length ? -sum(tx.filter((t) => fullMonths.includes(monthOf(t)))) / n : null;
       const budget = line ? (n ? fullMonths.reduce((s, m) => s + expenseInMonth(p.expenses, m, line), 0) / n : expenseInMonth(p.expenses, currentMonth, line)) : null;
       const tol = Math.max(10, (budget ?? 0) * 0.1);
       const status: RowStatus = !tx.length

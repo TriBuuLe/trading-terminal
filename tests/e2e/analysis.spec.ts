@@ -76,8 +76,14 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await expect(page.getByRole("button", { name: "use Entertainment?" })).toBeVisible();
     await page.getByRole("button", { name: "use Entertainment?" }).click();
     await expect(page.getByRole("button", { name: "use Entertainment?" })).toHaveCount(0);
-    await page.getByText("Monthly spending").first().scrollIntoViewIfNeeded();
-    await page.screenshot({ path: "test-results/finances.png" });
+    // Income from your transactions: the ACME paychecks (Sep 12, Oct 12) propose replacing the overlapping "Co-op" line.
+    await expect(page.getByText("Payroll deposits found")).toBeVisible();
+    await expect(page.getByText(/\$2,650\.00 monthly · 2 deposits/)).toBeVisible();
+    await page.getByRole("button", { name: "apply to “Co-op”" }).click();
+    await expect(page.getByText("matches “Co-op”")).toBeVisible();
+    // Budget lines show your actual average; a category you spend on without a line is offered with it.
+    await expect(page.getByRole("button", { name: /\+ Transportation \(~\$\d+\/mo actual\)/ })).toBeVisible();
+    await page.screenshot({ path: "test-results/finances.png", fullPage: true });
   } finally {
     await request.delete("/api/finances/export");
   }

@@ -1,14 +1,18 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useNow } from "@/hooks/use-now";
+import { api } from "@/lib/api";
 import { SPENDING_CATEGORIES, SPENDING_CATEGORY_NAMES, defaultKind } from "@/lib/planner/categories";
 import { matchPlanCategory } from "@/lib/planner/spending";
-import { addMonths, averageIncome, incomeInMonth, monthlyEquivalent, overrideWarning, riskScore } from "@/lib/planner/core";
+import { addMonths, incomeInMonth, isActive, monthlyEquivalent, nextPaycheck, overrideWarning, paychecks, riskScore } from "@/lib/planner/core";
+import { lineMatchesPattern, matchIncomeLine, WEEKDAYS, type PayPattern } from "@/lib/planner/paychecks";
 import { derivedTaxFacts, netIncome } from "@/lib/planner/net";
 import { TAX_YEARS } from "@/lib/tax/rules";
 import type { YearTax } from "@/lib/tax/calc";
+import type { YearSummary } from "@/lib/planner/summary";
 import type { AccountType, Profile } from "@/lib/planner/types";
 import { cn } from "@/lib/utils";
 
@@ -175,103 +179,218 @@ function TaxBreakdown({ taxes }: { taxes: YearTax[] }) {
   );
 }
 
-/** How one income line feeds the plan: active months in the next 12 and its share of the average. */
-function IncomeEffect({ i, now }: { i: Profile["incomes"][number]; now: string }) {
-  if (!i.repeatsYearly && i.startMonth && i.endMonth && i.endMonth < i.startMonth) {
-    return (
-      <p className="text-[11px] text-down">
-        Ends ({i.endMonth}) before it starts ({i.startMonth}), so it never counts. Fix the dates.
-      </p>
-    );
-  }
-  if (!i.repeatsYearly && i.endMonth && i.endMonth < now) {
-    return (
-      <p className="text-[11px] text-amber-300">
-        Ended {i.endMonth}: past income isn&apos;t counted (the plan looks at the next 12 months). If you&apos;ll work this term again, tick “repeats every year” or
-        add next year&apos;s dates.
-      </p>
-    );
-  }
-  const active = Array.from({ length: 12 }, (_, k) => incomeInMonth([i], addMonths(now, k))).filter((v) => v > 0).length;
-  const avg = averageIncome([i], now, 12);
+const scheduled = (i: Profile["incomes"][number]) => i.frequency === "weekly" || i.frequency === "biweekly" || (i.frequency === "hourly" && !!i.payEvery);
+const shortDate = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
+
+/** One line's effect on this calendar year: paychecks, total, next expected paycheck. */
+function IncomeEffect({ i, year }: { i: Profile["incomes"][number]; year: number }) {
   const label = i.basis === "gross" ? " before tax" : "";
+  const months = Array.from({ length: 12 }, (_, k) => `${year}-${String(k + 1).padStart(2, "0")}`);
+  const total = months.reduce((s, m) => s + incomeInMonth([i], m), 0);
+  if (scheduled(i)) {
+    if (!i.firstPayDate && !i.employmentStart) return <p className="text-[11px] text-amber-300">Enter the employment start or the first paycheck date.</p>;
+    const checks = paychecks(i, `${year}-01-01`, `${year}-12-31`);
+    const next = nextPaycheck([i], new Date().toISOString().slice(0, 10));
+    const per = checks.at(-1)?.amount ?? checks[0]?.amount ?? 0;
+    return (
+      <p className="num text-[10px] text-muted-foreground">
+        {year}: {checks.length} paycheck{checks.length === 1 ? "" : "s"} · {usd(total)}
+        {label}
+        {checks.length > 0 && <> · {usd(per)} per paycheck</>}
+        {checks.length > 0 && <> · {checks[0]!.date} → {checks.at(-1)!.date}</>}
+        {next && <b className="text-foreground"> · next expected {shortDate(next.date)}, {usd(next.amount)}</b>}
+      </p>
+    );
+  }
+  if (!i.repeatsYearly && i.startMonth && i.endMonth && i.endMonth < i.startMonth) return <p className="text-[11px] text-down">Ends before it starts. Fix the dates.</p>;
+  const active = months.filter((m) => incomeInMonth([i], m) > 0).length;
   return (
-    <p className="text-[10px] text-muted-foreground">
-      {i.frequency === "hourly" && `$${i.amount}/hr × ${i.hoursPerWeek ?? 40} h/week = $${monthlyEquivalent(i.amount, "hourly", i.hoursPerWeek).toFixed(2)}/month${label}. `}
-      Active {active} of the next 12 months → adds ${avg.toFixed(2)}/month{label} to your average
-      {active > 0 && active < 12 && ` ($${monthlyEquivalent(i.amount, i.frequency, i.hoursPerWeek).toFixed(2)}/month${label} while active)`}
-      {active === 0 && i.amount > 0 && " (it starts more than 12 months from now)"}
-      {i.repeatsYearly && i.startMonth && i.endMonth && ` · every year, ${i.startMonth.slice(5)}→${i.endMonth.slice(5)} (month numbers)`}.
+    <p className="num text-[10px] text-muted-foreground">
+      {year}: {active} month{active === 1 ? "" : "s"} · {usd(total)}
+      {label}
+      {i.frequency === "hourly" && <> · {usd(monthlyEquivalent(i.amount, "hourly", i.hoursPerWeek))}/month at {i.hoursPerWeek ?? 40} h/week</>}
     </p>
+  );
+}
+
+/** "IBM: $1,325.47 every Friday": proposals from payroll deposits. Nothing changes until you apply one and save. */
+function PaycheckSuggestions({ p, set }: { p: Profile; set: Set }) {
+  const q = useQuery({ queryKey: ["paychecks"], queryFn: () => api<PayPattern[]>("/api/finances/paychecks") });
+  if (!q.data?.length) return null;
+  const apply = (x: PayPattern, line: Profile["incomes"][number] | null) =>
+    set((pr) => {
+      const fields = { ...x.line, lastPayDate: x.ongoing ? (line?.lastPayDate ?? null) : x.last };
+      const keep = line ? { name: line.name, kind: line.kind, employmentStart: line.employmentStart ?? null, employmentEnd: line.employmentEnd ?? null } : {};
+      return line
+        ? { ...pr, incomes: pr.incomes.map((i) => (i.id === line.id ? { ...i, ...fields, ...keep, hoursPerWeek: undefined, payEvery: undefined, repeatsYearly: false } : i)) }
+        : { ...pr, incomes: [...pr.incomes, { id: uid(), ...fields }] };
+    });
+  return (
+    <div className="mb-2 rounded-md border border-border bg-background/40 p-2 text-[11px]">
+      <div className="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">Payroll deposits found</div>
+      <ul className="space-y-0.5">
+        {q.data.map((x) => {
+          const line = matchIncomeLine(x, p.incomes);
+          const same = line && lineMatchesPattern(line, x);
+          const every = x.frequency === "weekly" ? `every ${WEEKDAYS[x.payDay!]}` : x.frequency === "biweekly" ? `every other ${WEEKDAYS[x.payDay!]}` : x.frequency === "semimonthly" ? "twice a month" : "monthly";
+          return (
+            <li key={x.employer} className="num flex flex-wrap items-center gap-x-2">
+              <span className="font-sans font-medium">{x.employer}</span>
+              <span>
+                {usd(x.amount)} {every} · {x.count} deposits {x.first} → {x.last}
+                {x.ongoing ? "" : " (ended)"}
+              </span>
+              {same ? (
+                <span className="text-up">matches “{line.name}”</span>
+              ) : (
+                <button type="button" className="text-series-1 hover:underline" onClick={() => apply(x, line)}>
+                  {line ? `apply to “${line.name}”` : "add line"}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Second row for scheduled pay: employment dates, payday, first/last paycheck, and for hourly: workdays and pay period. */
+function ScheduleRow({ i, upd }: { i: Profile["incomes"][number]; upd: (id: string, patch: Partial<Profile["incomes"][number]>) => void }) {
+  const date = (label: string, key: "employmentStart" | "employmentEnd" | "firstPayDate" | "lastPayDate") => (
+    <input aria-label={label} type="date" className={inp} value={i[key] ?? ""} onChange={(e) => upd(i.id, { [key]: e.target.value || null })} />
+  );
+  const days = i.workdays?.length ? i.workdays : [1, 2, 3, 4, 5];
+  return (
+    <div className="flex flex-wrap items-center gap-2 pl-1 text-[11px] text-muted-foreground">
+      <span>employed</span>
+      {date("Employment start", "employmentStart")}
+      <span>to</span>
+      {date("Employment end", "employmentEnd")}
+      <span>· payday</span>
+      <select aria-label="Payday" className={inp} value={i.payDay ?? 5} onChange={(e) => upd(i.id, { payDay: Number(e.target.value) })}>
+        {WEEKDAYS.map((d, k) => (
+          <option key={d} value={k}>
+            {d}
+          </option>
+        ))}
+      </select>
+      <span>· first paycheck</span>
+      {date("First paycheck", "firstPayDate")}
+      <span>last</span>
+      {date("Last paycheck", "lastPayDate")}
+      {i.frequency === "hourly" && (
+        <>
+          <span>· workdays</span>
+          <span className="flex gap-0.5" role="group" aria-label="Workdays">
+            {DAY_LETTERS.map((l, k) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={days.includes(k)}
+                aria-label={WEEKDAYS[k]}
+                onClick={() => upd(i.id, { workdays: days.includes(k) ? days.filter((d) => d !== k) : [...days, k].sort() })}
+                className={cn("size-5 rounded border text-[10px]", days.includes(k) ? "border-series-1 bg-series-1/15 text-foreground" : "border-border")}
+              >
+                {l}
+              </button>
+            ))}
+          </span>
+          <span>· period ends</span>
+          <Num label="Pay period ends days before payday" value={i.periodEndsDaysBefore ?? 0} onChange={(n) => upd(i.id, { periodEndsDaysBefore: Math.max(0, Math.round(n)) })} className="w-12" />
+          <span>days before payday</span>
+        </>
+      )}
+    </div>
   );
 }
 
 export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
   const upd = (id: string, patch: Partial<Profile["incomes"][number]>) => set((x) => ({ ...x, incomes: x.incomes.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
-  const now = ymOf(useNow(60 * 60_000));
-  const net = netIncome(p, now, 12);
+  const year = Number(ymOf(useNow(60 * 60_000)).slice(0, 4));
+  const net = netIncome(p, `${year}-01`, 12);
+  const yearTotal = net.byMonth.reduce((s, m) => s + m.amount, 0);
   return (
     <Section
       title="Income"
       hint={
         p.country === "US"
-          ? "Enter pay before tax (salary or $/hour) and the app estimates federal, Social Security, Medicare and state tax, or enter take-home pay if you know it. Add co-op terms as separate lines with start/end months; the plan averages the next 12 months."
-          : "Enter take-home pay (after tax). Canadian tax estimates aren't built yet. Add co-op terms as separate lines with start/end months; the plan averages the next 12 months."
+          ? "Take-home or before tax (the app estimates US federal, FICA and state tax). Weekly and every-2-weeks pay counts each payday."
+          : "Take-home pay. Weekly and every-2-weeks pay counts each payday."
       }
       onAdd={() =>
         set((x) => ({
           ...x,
-          incomes: [...x.incomes, { id: uid(), name: "Job", amount: 0, frequency: "monthly", kind: "salary", basis: "net", startMonth: null, endMonth: null }],
+          incomes: [...x.incomes, { id: uid(), name: "Job", amount: 0, frequency: "weekly", kind: "salary", basis: "net", payDay: 5, employmentStart: null, firstPayDate: null }],
         }))
       }
     >
+      <PaycheckSuggestions p={p} set={set} />
       {p.incomes.length === 0 && <p className="text-[11px] text-muted-foreground">No income yet.</p>}
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {p.incomes.map((i) => (
           <div key={i.id} className="space-y-0.5">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <input aria-label="Income name" className={cn(inp, "w-36")} value={i.name} onChange={(e) => upd(i.id, { name: e.target.value })} />
-            <span className="text-muted-foreground">$</span>
-            <Num label="Amount" value={i.amount} step={i.frequency === "hourly" ? 0.25 : 1} onChange={(n) => upd(i.id, { amount: n })} className="w-24" />
-            <select aria-label="Pay basis" className={inp} value={i.basis ?? "net"} onChange={(e) => upd(i.id, { basis: e.target.value as "net" | "gross" })}>
-              <option value="gross" disabled={p.country !== "US"}>
-                before tax{p.country !== "US" ? " (US only)" : ""}
-              </option>
-              <option value="net">take-home</option>
-            </select>
-            <select aria-label="Frequency" className={inp} value={i.frequency} onChange={(e) => upd(i.id, { frequency: e.target.value as typeof i.frequency, ...(e.target.value === "hourly" && !i.hoursPerWeek ? { hoursPerWeek: 40 } : {}) })}>
-              <option value="hourly">per hour</option>
-              <option value="weekly">weekly</option>
-              <option value="biweekly">every 2 weeks</option>
-              <option value="semimonthly">twice a month</option>
-              <option value="monthly">monthly</option>
-              <option value="annual">yearly</option>
-            </select>
-            {i.frequency === "hourly" && (
-              <label className="flex items-center gap-1 text-muted-foreground">
-                × <Num label="Hours per week" value={i.hoursPerWeek ?? 40} onChange={(n) => upd(i.id, { hoursPerWeek: n })} className="w-14" /> h/week
-              </label>
-            )}
-            <select aria-label="Kind" className={inp} value={i.kind} onChange={(e) => upd(i.id, { kind: e.target.value as typeof i.kind })}>
-              <option value="salary">job</option>
-              <option value="coop">co-op term</option>
-              <option value="bonus">bonus</option>
-              <option value="other">other</option>
-            </select>
-            <span className="text-muted-foreground">from</span>
-            <input aria-label="Start month" type="month" className={inp} value={i.startMonth ?? ""} onChange={(e) => upd(i.id, { startMonth: e.target.value || null })} />
-            <span className="text-muted-foreground">to</span>
-            <input aria-label="End month" type="month" className={inp} value={i.endMonth ?? ""} onChange={(e) => upd(i.id, { endMonth: e.target.value || null })} />
-            <label className="flex items-center gap-1 text-muted-foreground" title="Counts the same months every year, e.g. a Sep–Dec co-op term each fall">
-              <input type="checkbox" checked={i.repeatsYearly ?? false} disabled={!i.startMonth || !i.endMonth} onChange={(e) => upd(i.id, { repeatsYearly: e.target.checked })} />
-              repeats every year
-            </label>
-            <label className="flex items-center gap-1 text-muted-foreground">
-              raise %/yr <Num label="Raise percent" value={i.annualRaisePct ?? 0} step={0.5} onChange={(n) => upd(i.id, { annualRaisePct: n })} className="w-14" />
-            </label>
-            <Del label="Remove income" onClick={() => set((x) => ({ ...x, incomes: x.incomes.filter((y) => y.id !== i.id) }))} />
-          </div>
-          <IncomeEffect i={i} now={now} />
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <input aria-label="Income name" className={cn(inp, "w-36")} value={i.name} onChange={(e) => upd(i.id, { name: e.target.value })} />
+              <span className="text-muted-foreground">$</span>
+              <Num label="Amount" value={i.amount} step={i.frequency === "hourly" ? 0.25 : 1} onChange={(n) => upd(i.id, { amount: n })} className="w-24" />
+              <select aria-label="Pay basis" className={inp} value={i.basis ?? "net"} onChange={(e) => upd(i.id, { basis: e.target.value as "net" | "gross" })}>
+                <option value="gross" disabled={p.country !== "US"}>
+                  before tax{p.country !== "US" ? " (US only)" : ""}
+                </option>
+                <option value="net">take-home</option>
+              </select>
+              <select
+                aria-label="Frequency"
+                className={inp}
+                value={i.frequency}
+                onChange={(e) => {
+                  const f = e.target.value as typeof i.frequency;
+                  upd(i.id, {
+                    frequency: f,
+                    ...(f === "hourly" && !i.hoursPerWeek ? { hoursPerWeek: 40, payEvery: "weekly" as const } : {}),
+                    ...((f === "weekly" || f === "biweekly") && i.payDay === undefined ? { payDay: 5 } : {}),
+                  });
+                }}
+              >
+                <option value="weekly">per paycheck, weekly</option>
+                <option value="biweekly">per paycheck, every 2 weeks</option>
+                <option value="hourly">per hour</option>
+                <option value="semimonthly">twice a month</option>
+                <option value="monthly">monthly</option>
+                <option value="annual">yearly</option>
+              </select>
+              {i.frequency === "hourly" && (
+                <>
+                  <label className="flex items-center gap-1 text-muted-foreground">
+                    × <Num label="Hours per week" value={i.hoursPerWeek ?? 40} onChange={(n) => upd(i.id, { hoursPerWeek: n })} className="w-14" /> h/week
+                  </label>
+                  <select aria-label="Paid how often" className={inp} value={i.payEvery ?? ""} onChange={(e) => upd(i.id, { payEvery: (e.target.value || undefined) as "weekly" | "biweekly" | undefined })}>
+                    <option value="weekly">paid weekly</option>
+                    <option value="biweekly">paid every 2 weeks</option>
+                    <option value="">monthly estimate</option>
+                  </select>
+                </>
+              )}
+              <select aria-label="Kind" className={inp} value={i.kind} onChange={(e) => upd(i.id, { kind: e.target.value as typeof i.kind })}>
+                <option value="salary">job</option>
+                <option value="coop">co-op term</option>
+                <option value="bonus">bonus</option>
+                <option value="other">other</option>
+              </select>
+              {!scheduled(i) && (
+                <>
+                  <span className="text-muted-foreground">from</span>
+                  <input aria-label="Start month" type="month" className={inp} value={i.startMonth ?? ""} onChange={(e) => upd(i.id, { startMonth: e.target.value || null })} />
+                  <span className="text-muted-foreground">to</span>
+                  <input aria-label="End month" type="month" className={inp} value={i.endMonth ?? ""} onChange={(e) => upd(i.id, { endMonth: e.target.value || null })} />
+                </>
+              )}
+              <Del label="Remove income" onClick={() => set((x) => ({ ...x, incomes: x.incomes.filter((y) => y.id !== i.id) }))} />
+            </div>
+            {scheduled(i) && <ScheduleRow i={i} upd={upd} />}
+            <IncomeEffect i={i} year={year} />
           </div>
         ))}
       </div>
@@ -284,8 +403,8 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
         </ul>
       )}
       {p.incomes.length > 0 && (
-        <p className="mt-2 text-[11px]">
-          Plan income, take-home (average of the next 12 months): <b className="num">${net.average.toFixed(2)}/month</b>
+        <p className="num mt-2 text-[11px]">
+          {year} take-home (Jan–Dec): <b>{usd(yearTotal)}</b>
         </p>
       )}
     </Section>
@@ -315,9 +434,27 @@ function CategoryPicker({ value, onChange }: { value: string; onChange: (v: stri
   );
 }
 
+/** "actual ~$502/mo · use": your real average next to a budget line that's current, when they differ by more than 10%. */
+function ActualHint({ avg, line, now, onUse }: { avg: number | null; line: Profile["expenses"][number]; now: string; onUse: (n: number) => void }) {
+  const current = isActive(line, now) || (!!line.endMonth && line.endMonth >= now);
+  if (avg === null || !current || Math.abs(avg - line.monthly) <= Math.max(10, line.monthly * 0.1)) return null;
+  return (
+    <button type="button" className="text-[10px] text-series-1 hover:underline" title="Your average from imported transactions (full months this year)" onClick={() => onUse(Math.round(avg))}>
+      actual ~${Math.round(avg)}/mo · use
+    </button>
+  );
+}
+
 export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
   const upd = (id: string, patch: Partial<Profile["expenses"][number]>) => set((x) => ({ ...x, expenses: x.expenses.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
-  const missing = SPENDING_CATEGORIES.filter((c) => c.name !== "Other" && !p.expenses.some((e) => e.category === c.name));
+  // Your real monthly average per category (full months this year), to suggest budget amounts.
+  const year = new Date().getFullYear();
+  const actual = useQuery({ queryKey: ["summary", year], queryFn: () => api<{ summary: YearSummary | null }>(`/api/finances/summary?year=${year}`) });
+  const avgOf = (cat: string) => actual.data?.summary?.categories.find((c) => c.category === cat)?.avgPerMonth ?? null;
+  const now = ymOf(useNow(60 * 60_000));
+  const missing = SPENDING_CATEGORIES.filter((c) => !p.expenses.some((e) => e.category === c.name) && (c.name !== "Other" || (avgOf("Other") ?? 0) > 0)).sort(
+    (a, b) => (avgOf(b.name) ?? 0) - (avgOf(a.name) ?? 0),
+  );
   return (
     <Section
       title="Monthly spending"
@@ -329,6 +466,7 @@ export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
           <div key={e.id} className="flex flex-wrap items-center gap-2 text-xs">
             <CategoryPicker value={e.category} onChange={(category, kind) => upd(e.id, { category, kind })} />
             <Num label="Monthly amount" value={e.monthly} onChange={(n) => upd(e.id, { monthly: n })} />
+            <ActualHint avg={avgOf(e.category)} line={e} now={now} onUse={(n) => upd(e.id, { monthly: n })} />
             <select aria-label="Need or want" className={inp} value={e.kind} onChange={(ev) => upd(e.id, { kind: ev.target.value as "need" | "want" })}>
               <option value="need">need</option>
               <option value="want">want</option>
@@ -367,10 +505,15 @@ export function ExpenseSection({ p, set }: { p: Profile; set: Set }) {
             <button
               key={c}
               type="button"
-              onClick={() => set((x) => ({ ...x, expenses: [...x.expenses, { id: uid(), category: c, monthly: 0, kind: k }] }))}
-              className="rounded border border-dashed border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+              onClick={() => set((x) => ({ ...x, expenses: [...x.expenses, { id: uid(), category: c, monthly: Math.round(avgOf(c) ?? 0), kind: k }] }))}
+              className={cn(
+                "rounded border border-dashed px-1.5 py-0.5 text-[10px] hover:text-foreground",
+                (avgOf(c) ?? 0) > 0 ? "border-amber-500/50 text-amber-300" : "border-border text-muted-foreground",
+              )}
+              title={(avgOf(c) ?? 0) > 0 ? "You spend on this but have no budget line: adds one at your actual monthly average" : undefined}
             >
               + {c}
+              {(avgOf(c) ?? 0) > 0 && ` (~$${Math.round(avgOf(c)!)}/mo actual)`}
             </button>
           ))}
         </div>

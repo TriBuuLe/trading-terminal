@@ -103,6 +103,7 @@ export const profileSchema = z.object({
   autoRoll: z.object({ enabled: z.boolean(), cashAccountId: z.string().min(1).max(40), lastRolledMonth: ym }).optional(),
   budgetBasis: z.enum(["planned", "actual"]).optional(),
   categoryMap: z.record(z.string().max(40), z.string().max(40)).optional(),
+  preferredName: z.string().trim().max(40).optional(),
   cashSync: z.object({ enabled: z.boolean(), accountId: z.string().max(64), balanceAsOf: isoDate, credited: z.array(z.number().int()).max(20000) }).optional(),
   yearPlans: z.record(z.string().regex(/^\d{4}$/), yearPlanSchema).optional(),
   categoryRules: z.array(z.object({ match: z.string().trim().min(2).max(60), category: z.string().trim().min(1).max(40) })).max(200).optional(),

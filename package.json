@@ -14,6 +14,7 @@
     "db:up": "docker compose up -d db",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
+    "ai:eval": "tsx --env-file=.env.local scripts/ai-eval.mts",
     "cron:daily": "tsx scripts/cron-daily.ts",
     "check": "pnpm typecheck && pnpm lint && pnpm test"
   },

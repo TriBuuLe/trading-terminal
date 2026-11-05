@@ -27,3 +27,48 @@ export function ungroundedAmounts(reply: string, context: unknown, userText = ""
   const near = (v: number) => [...pool].some((k) => Math.abs(k - v) <= Math.max(1, Math.abs(k) * 0.01));
   return [...new Set(found.filter((f) => f.value >= 10 && !near(f.value)).map((f) => f.raw.trim()))];
 }
+
+/**
+ * Arithmetic the reply shows ("$486.49 × 7 = $3,405.43", "$5,301.88 + $3,976.41 = $9,278.29",
+ * chains like "a + b + c = d"): flag every equation that doesn't hold (within 1% or $1).
+ * × and ÷ bind tighter than + and −.
+ */
+const NUM = String.raw`\$?\s?\d[\d,]*(?:\.\d+)?`;
+const OP = String.raw`[×x*+−\-÷/]`;
+const WORDS = String.raw`(?:\s*\(?[a-z][a-z .&'()-]{0,24}?\)?)?`; // "7 deposits", "(Nov)"
+const EQUATION = new RegExp(`(${NUM}${WORDS}(?:\\s*${OP}\\s*${NUM}${WORDS})+)\\s*=\\s*(${NUM})`, "gi");
+
+function evaluate(expr: string): number | null {
+  const tokens = [...expr.matchAll(new RegExp(`(${NUM})|(${OP})`, "gi"))].map((m) => m[0].trim());
+  const nums: number[] = [];
+  const ops: string[] = [];
+  for (const t of tokens) {
+    if (/\d/.test(t)) nums.push(Number(t.replace(/[$,\s]/g, "")));
+    else ops.push(t);
+  }
+  if (nums.length !== ops.length + 1) return null;
+  // × ÷ first
+  const n2 = [nums[0]!];
+  const o2: string[] = [];
+  ops.forEach((o, k) => {
+    const b = nums[k + 1]!;
+    if (/[×x*]/i.test(o)) n2[n2.length - 1]! *= b;
+    else if (/[÷/]/.test(o)) n2[n2.length - 1] = b ? n2[n2.length - 1]! / b : NaN;
+    else {
+      n2.push(b);
+      o2.push(o);
+    }
+  });
+  return o2.reduce((acc, o, k) => (o === "+" ? acc + n2[k + 1]! : acc - n2[k + 1]!), n2[0]!);
+}
+
+export function wrongMath(reply: string): string[] {
+  const out: string[] = [];
+  for (const m of reply.matchAll(EQUATION)) {
+    const v = evaluate(m[1]!);
+    const c = Number(m[2]!.replace(/[$,\s]/g, ""));
+    if (v === null || !Number.isFinite(v)) continue;
+    if (!(Math.abs(v - c) <= Math.max(1, Math.abs(c) * 0.01))) out.push(m[0].trim());
+  }
+  return [...new Set(out)];
+}

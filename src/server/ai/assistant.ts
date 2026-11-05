@@ -1,5 +1,5 @@
 import { describe, parseActions, type Action } from "@/lib/ai/actions";
-import { ungroundedAmounts } from "@/lib/ai/grounding";
+import { ungroundedAmounts, wrongMath } from "@/lib/ai/grounding";
 import { createRedactor } from "@/lib/ai/redact";
 import { SPENDING_CATEGORIES } from "@/lib/planner/categories";
 import { nextPaycheck } from "@/lib/planner/core";
@@ -37,6 +37,7 @@ export async function financeContext() {
   return {
     today,
     year,
+    owner: { callThem: profile.preferredName ?? null },
     about: { country: profile.country, region: profile.region, age: profile.age },
     categories: SPENDING_CATEGORIES.map((c) => c.name),
     accounts: profile.accounts.map((a) => ({ name: a.name, type: a.type, balance: a.balance })),
@@ -93,7 +94,17 @@ export async function financeContext() {
   };
 }
 
-const SYSTEM = `You are Folio's personal finance assistant for one person. You have their complete financial data in CONTEXT (JSON), computed by the app from their profile and imported bank/card statements.
+const SYSTEM = `You are Folio's personal finance assistant. You talk to ONE person: the owner of this data ("you"). CONTEXT (JSON) holds their data, computed by the app from their profile and imported bank/card statements.
+
+Identity:
+- Address the owner as CONTEXT.owner.callThem if set, otherwise just "you". Never give the owner any other name.
+- "Person A", "Person B"… are OTHER people (who the owner sent money to or got money from via Zelle etc.). They are never the owner.
+- You have no memory beyond this conversation. Never say you've "noted" or "saved" something. To remember the owner's name, propose a set_name change.
+
+Honesty:
+- If something isn't in CONTEXT, say you don't have it. Don't guess, don't fill gaps.
+- Planned income = CONTEXT.plannedByMonth / incomeLines (what the plan expects). Received income = CONTEXT.statements.incomeSources (deposits). Say which one you mean.
+- Only write "a × b = c" when it's exactly true. A total of several different deposits is a sum, not latest amount × count.
 
 Rules:
 - Use only numbers from CONTEXT, or arithmetic on them that you show (e.g. "$502 × 12 = $6,024"). Never invent transactions, balances or rates.
@@ -102,7 +113,7 @@ Rules:
 - Be concise: short paragraphs or bullets with the key numbers. No disclaimers beyond one short line when giving a recommendation.
 - People appear as "Person A", "Person B" (redacted); refer to them that way.
 - Needs (rent etc.) are the user's to set; for wants you may propose cuts using wantsProposal and their spending.
-- When the user asks you to set up, configure, change or fix something (or a change would clearly help and they asked for help), end your reply with ONE fenced block:
+- Only when the user asks you to set up, configure, change or fix something, end your reply with ONE fenced block (never for questions, greetings or explanations; never invent goals):
 \`\`\`actions
 [ ...changes... ]
 \`\`\`
@@ -113,6 +124,7 @@ Allowed changes (JSON objects; months arrays have exactly 12 numbers, Jan..Dec; 
   {"type":"set_income","name":"<existing income line name or new>","amount":N,"frequency":"weekly|biweekly|hourly|semimonthly|monthly|annual|once","payDay":0-6 (5=Friday),"employmentStart":"YYYY-MM-DD","employmentEnd":"YYYY-MM-DD","basis":"net|gross","kind":"salary|coop|bonus|other"}
   {"type":"set_goal","name":"...","kind":"net_worth|retirement|long_term|house|emergency|car|education|other","target":N,"targetDate":"YYYY-MM","monthlyContribution":N}
   {"type":"set_balance","account":"<account name>","balance":N}
+  {"type":"set_name","name":"<first name the owner wants to be called>"}
   Monthly amounts apply to the months still ahead (CONTEXT.planVsStatements.remaining.months); months with statements keep their plan. When you state a year total, show how it adds up (so far + months ahead x monthly).
   Only include fields you change. The user reviews and applies each change; say so briefly. Never claim a change was made.`;
 
@@ -121,16 +133,16 @@ export interface ChatTurn {
   text: string;
 }
 
-export async function askAssistant(messages: ChatTurn[]): Promise<{ reply: string; actions: { action: Action; summary: string }[]; rejected: string[]; ungrounded: string[]; model: string }> {
+export async function askAssistant(messages: ChatTurn[]): Promise<{ reply: string; actions: { action: Action; summary: string }[]; rejected: string[]; ungrounded: string[]; wrongMath: string[]; model: string }> {
   const ctx = await financeContext();
-  if (!ctx) return { reply: "Set up your finances first (My finances).", actions: [], rejected: [], ungrounded: [], model: "" };
+  if (!ctx) return { reply: "Set up your finances first (My finances).", actions: [], rejected: [], ungrounded: [], wrongMath: [], model: "" };
   const red = createRedactor();
   const contextJson = red.redact(JSON.stringify(ctx));
   const transcript = messages
     .slice(-12)
     .map((m) => `${m.role === "user" ? "USER" : "ASSISTANT"}: ${red.redact(m.text)}`)
     .join("\n\n");
-  const { text, model } = await generate({ system: SYSTEM, input: `CONTEXT:\n${contextJson}\n\nCONVERSATION:\n${transcript}\n\nASSISTANT:` });
+  const { text, model } = await generate({ system: SYSTEM, input: `CONTEXT:\n${contextJson}\n\nCONVERSATION:\n${transcript}\n\nASSISTANT:`, temperature: 0.1 });
   const parsed = parseActions(text);
   const reply = red.restore(parsed.text);
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.text ?? "";
@@ -139,6 +151,7 @@ export async function askAssistant(messages: ChatTurn[]): Promise<{ reply: strin
     actions: parsed.actions.map((a) => ({ action: a, summary: red.restore(describe(a)) })),
     rejected: parsed.rejected,
     ungrounded: ungroundedAmounts(parsed.text, JSON.parse(contextJson), red.redact(lastUser)),
+    wrongMath: wrongMath(parsed.text),
     model,
   };
 }

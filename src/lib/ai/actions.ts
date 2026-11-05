@@ -53,6 +53,7 @@ export const actionSchema = z.discriminatedUnion("type", [
     monthlyContribution: amount.optional(),
     why: z.string().max(300).optional(),
   }),
+  z.object({ type: z.literal("set_name"), name: z.string().trim().min(1).max(40), why: z.string().max(300).optional() }),
   z.object({ type: z.literal("set_balance"), account: z.string().trim().min(1).max(60), balance: z.number().min(-1e8).max(1e8), why: z.string().max(300).optional() }),
 ]);
 export type Action = z.infer<typeof actionSchema>;
@@ -82,6 +83,8 @@ export function describe(a: Action): string {
       return `Goal “${a.name}”: ${[a.target !== undefined && fmt(a.target), a.targetDate && `by ${a.targetDate}`, a.monthlyContribution !== undefined && `${fmt(a.monthlyContribution)}/mo`].filter(Boolean).join(" · ")}`;
     case "set_balance":
       return `${a.account} balance: ${fmt(a.balance)}`;
+    case "set_name":
+      return `Call you “${a.name}”`;
   }
 }
 
@@ -127,6 +130,8 @@ export function applyActions(p: Profile, actions: Action[], year: number, today:
             ...out,
             goals: [...out.goals, { id: Math.random().toString(36).slice(2, 10), kind: "other", target: 0, targetDate: `${year + 1}-12`, priority: out.goals.length + 1, current: 0, ...fields }],
           };
+    } else if (a.type === "set_name") {
+      out = { ...out, preferredName: a.name };
     } else if (a.type === "set_balance") {
       out = { ...out, accounts: out.accounts.map((x) => (x.name.toLowerCase() === a.account.toLowerCase() ? { ...x, balance: a.balance } : x)) };
     }
@@ -150,6 +155,11 @@ export function parseActions(reply: string): { text: string; actions: Action[]; 
   const rejected: string[] = [];
   for (const x of list) {
     const r = actionSchema.safeParse(x);
+    // A goal change must actually set something: a positive target, a date or a contribution.
+    if (r.success && r.data.type === "set_goal" && !(r.data.target && r.data.target > 0) && !r.data.targetDate && !r.data.monthlyContribution) {
+      rejected.push(`set_goal: “${r.data.name}” sets nothing`);
+      continue;
+    }
     if (r.success) actions.push(r.data);
     else rejected.push(`${(x as { type?: string })?.type ?? "change"}: ${r.error.issues[0]?.path.join(".")} ${r.error.issues[0]?.message}`);
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyActions, describe as describeAction, parseActions, setAhead } from "@/lib/ai/actions";
-import { ungroundedAmounts } from "@/lib/ai/grounding";
+import { ungroundedAmounts, wrongMath } from "@/lib/ai/grounding";
 import { createRedactor } from "@/lib/ai/redact";
 import type { Profile } from "@/lib/planner/types";
 
@@ -67,5 +67,19 @@ describe("mid-year amounts", () => {
     const { actions } = parseActions('```actions\n[{"type":"set_budget","category":"Dining out (want)","annual":3012}]\n```');
     expect(actions[0]).toMatchObject({ category: "Dining out" });
     expect(describeAction(actions[0]!)).toBe("Dining out: $251/mo for the months ahead");
+  });
+});
+
+describe("hallucination guards", () => {
+  it("flags arithmetic that doesn't hold", () => {
+    expect(wrongMath("Regis Group: $486.49 × 7 deposits = $6,248.77 total")).toEqual(["$486.49 × 7 deposits = $6,248.77"]);
+    expect(wrongMath("$486.49 × 7 = $3,405.43; $5,301.88 + $3,976.41 = $9,278.29; $9,278 − $5,888 = $3,390")).toEqual([]);
+    expect(wrongMath("$100 + $200 + $300 = $600; $887.46 + 2 × $1,195 = $3,277.46")).toEqual([]);
+    expect(wrongMath("$100 + $200 + $300 = $700")).toEqual(["$100 + $200 + $300 = $700"]);
+  });
+  it("rejects goal changes that set nothing; remembers your name only through a change you apply", () => {
+    const r = parseActions('```actions\n[{"type":"set_goal","name":"Correction","target":0},{"type":"set_name","name":"Tri"}]\n```');
+    expect(r.actions.map(describeAction)).toEqual(["Call you “Tri”"]);
+    expect(r.rejected).toEqual(["set_goal: “Correction” sets nothing"]);
   });
 });

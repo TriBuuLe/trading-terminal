@@ -19,6 +19,7 @@ interface Turn {
   actions?: { action: Action; summary: string }[];
   rejected?: string[];
   ungrounded?: string[];
+  wrongMath?: string[];
   model?: string;
   applied?: boolean;
 }
@@ -115,11 +116,11 @@ export function Assistant() {
   const [draft, setDraft] = useState("");
   const ask = useMutation({
     mutationFn: (messages: Turn[]) =>
-      api<{ reply: string; actions: Turn["actions"]; rejected: string[]; ungrounded: string[]; model: string }>("/api/finances/assistant", {
+      api<{ reply: string; actions: Turn["actions"]; rejected: string[]; ungrounded: string[]; wrongMath: string[]; model: string }>("/api/finances/assistant", {
         method: "POST",
         body: { messages: messages.map((m) => ({ role: m.role, text: m.text })) },
       }),
-    onSuccess: (r) => set((t) => [...t, { role: "assistant", text: r.reply, actions: r.actions, rejected: r.rejected, ungrounded: r.ungrounded, model: r.model }]),
+    onSuccess: (r) => set((t) => [...t, { role: "assistant", text: r.reply, actions: r.actions, rejected: r.rejected, ungrounded: r.ungrounded, wrongMath: r.wrongMath, model: r.model }]),
     onError: (e) => toast.error(e.message),
   });
   const send = (text: string) => {
@@ -171,9 +172,20 @@ export function Assistant() {
                     Not found in your data, double-check: {t.ungrounded.join(", ")}
                   </p>
                 )}
+                {!!t.wrongMath?.length && (
+                  <p className="mt-1 flex gap-1 text-[10px] text-down">
+                    <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+                    Math doesn&apos;t add up: {t.wrongMath.join("; ")}
+                  </p>
+                )}
                 {!!t.rejected?.length && <p className="mt-1 text-[10px] text-muted-foreground">Skipped {t.rejected.length} invalid proposed change{t.rejected.length === 1 ? "" : "s"}.</p>}
                 <Changes turn={t} index={k} />
-                {t.model && <p className="mt-1 text-right text-[9px] text-muted-foreground">{t.model}</p>}
+                {t.model && (
+                  <p className="mt-1 text-right text-[9px] text-muted-foreground">
+                    {t.model}
+                    {/lite/.test(t.model) && " · lighter model (others busy), double-check"}
+                  </p>
+                )}
               </>
             )}
           </div>

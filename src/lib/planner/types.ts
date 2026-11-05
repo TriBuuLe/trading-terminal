@@ -141,6 +141,8 @@ export interface Profile {
    * never twice (`credited` = transaction ids already added).
    */
   cashSync?: { enabled: boolean; accountId: string; balanceAsOf: string; credited: number[] };
+  /** What the assistant calls you (first name). Sent to the AI model only if set. */
+  preferredName?: string;
   /** One plan per calendar year (key "2026"); previous years are kept. */
   yearPlans?: Record<string, YearPlan>;
 }

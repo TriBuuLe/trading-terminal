@@ -114,7 +114,7 @@ export class PgCache {
 }
 
 declare global {
-  var __paperTerminalCache: PgCache | undefined;
+  var __folioCache: PgCache | undefined;
 }
 
-export const cache: PgCache = (globalThis.__paperTerminalCache ??= new PgCache());
+export const cache: PgCache = (globalThis.__folioCache ??= new PgCache());

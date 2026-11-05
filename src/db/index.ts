@@ -5,7 +5,7 @@ import * as schema from "./schema";
 export type DB = PostgresJsDatabase<typeof schema>;
 
 declare global {
-  var __paperTerminalDb: { db: DB; client: postgres.Sql } | undefined;
+  var __folioDb: { db: DB; client: postgres.Sql } | undefined;
 }
 
 export function createDb(url: string, opts: { max?: number } = {}): { db: DB; client: postgres.Sql } {
@@ -24,12 +24,12 @@ export function createDb(url: string, opts: { max?: number } = {}): { db: DB; cl
 
 /** Per-process connection (reused across warm invocations and dev hot reloads). */
 export function db(): DB {
-  if (!globalThis.__paperTerminalDb) {
+  if (!globalThis.__folioDb) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set");
-    globalThis.__paperTerminalDb = createDb(url);
+    globalThis.__folioDb = createDb(url);
   }
-  return globalThis.__paperTerminalDb.db;
+  return globalThis.__folioDb.db;
 }
 
 export { schema };

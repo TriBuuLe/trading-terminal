@@ -27,10 +27,10 @@ export default async function LoginPage({
     <main className="flex h-full items-center justify-center p-8">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="font-mono text-sm tracking-tight">PAPER TERMINAL</CardTitle>
+          <CardTitle className="font-mono text-sm tracking-tight">FOLIO</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
-          <p className="text-muted-foreground">Single-user paper trading terminal. Sign in with GitHub.</p>
+          <p className="text-muted-foreground">Your personal finance planner and paper-trading terminal. Sign in with GitHub.</p>
           {error && <p className="rounded-md bg-red-500/10 p-2 text-red-400">{error}</p>}
           {!configured && (
             <p className="rounded-md bg-amber-500/10 p-2 text-amber-400">

@@ -17,8 +17,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Paper Terminal",
-  description: "Paper trading terminal on real market data",
+  title: "Folio",
+  description: "Personal finance planner and paper-trading terminal",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

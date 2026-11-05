@@ -1,4 +1,6 @@
-# Paper Terminal
+# Folio
+
+Personal finance planner (budget, real spending from your bank and card CSVs, goals, Roth/TFSA-style accounts) plus a paper-trading terminal.
 
 A trading terminal on **real, live US stock data** with a **paper (fake-money) account**. Its purpose is to answer one question honestly: *if I made these trades for real, would I make money?*
 

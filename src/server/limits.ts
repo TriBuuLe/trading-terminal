@@ -14,10 +14,10 @@ import { PgTokenBucket, type Limiter } from "./rate-limiter";
  * Alpaca keys could exceed the limit; the 429 back-off handles that case.
  */
 declare global {
-  var __paperTerminalLimiters: { alpacaData: Limiter; alpacaTrading: Limiter; finnhub: Limiter } | undefined;
+  var __folioLimiters: { alpacaData: Limiter; alpacaTrading: Limiter; finnhub: Limiter } | undefined;
 }
 
-export const limiters = (globalThis.__paperTerminalLimiters ??= {
+export const limiters = (globalThis.__folioLimiters ??= {
   alpacaData: new PgTokenBucket(db, "alpaca-data", 20, 180),
   alpacaTrading: new PgTokenBucket(db, "alpaca-trading", 20, 180),
   finnhub: new PgTokenBucket(db, "finnhub", 10, 55),

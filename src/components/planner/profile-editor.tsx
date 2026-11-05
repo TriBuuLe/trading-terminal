@@ -573,7 +573,7 @@ export function SettingsSection({ p, set }: { p: Profile; set: Set }) {
   return (
     <Section title="Plan settings">
       <div className="flex flex-wrap items-center gap-4 text-xs">
-        <label className="flex items-center gap-1.5" title="Share of long-term investing money you may use for individual stock picking in the paper terminal">
+        <label className="flex items-center gap-1.5" title="Share of long-term investing money you may use for individual stock picking in the Terminal (paper trading)">
           Stock-picking sandbox <Num label="Sandbox percent" value={p.sandboxPct} step={0.5} onChange={(n) => set((x) => ({ ...x, sandboxPct: n }))} className="w-16" />%
         </label>
         <label className="flex items-center gap-1.5">

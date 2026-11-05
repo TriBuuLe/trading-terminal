@@ -53,7 +53,7 @@ export function TopBar() {
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b border-border bg-panel px-3">
       <div className="flex items-center gap-2">
-        <span className="font-mono text-sm font-semibold tracking-tight">PAPER·TERMINAL</span>
+        <span className="font-mono text-sm font-semibold tracking-tight">FOLIO</span>
         <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-amber-300" title="Paper trading only: no real money">
           PAPER
         </span>

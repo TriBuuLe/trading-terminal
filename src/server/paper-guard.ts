@@ -20,7 +20,7 @@ export class LiveTradingRefusedError extends Error {
   constructor(source: string) {
     super(
       `REFUSING TO START: "${source}" points at the LIVE Alpaca trading endpoint (api.alpaca.markets). ` +
-        `Paper Terminal is paper-trading only and always uses ${ALPACA_PAPER_TRADING_URL}. ` +
+        `Folio is paper-trading only and always uses ${ALPACA_PAPER_TRADING_URL}. ` +
         `Remove or fix that value.`,
     );
     this.name = "LiveTradingRefusedError";

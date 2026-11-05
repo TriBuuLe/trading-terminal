@@ -7,7 +7,7 @@ export async function register() {
     const { env } = await import("./server/env");
     const e = env();
     console.log(
-      `[paper-terminal] env OK: paper trading only, feed=${e.ALPACA_DATA_FEED}, demo=${e.DEMO_MODE}, quote poll=${e.QUOTE_POLL_MS}ms`,
+      `[folio] env OK: paper trading only, feed=${e.ALPACA_DATA_FEED}, demo=${e.DEMO_MODE}, quote poll=${e.QUOTE_POLL_MS}ms`,
     );
   }
 }

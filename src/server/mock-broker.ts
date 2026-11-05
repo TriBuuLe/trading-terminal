@@ -40,12 +40,12 @@ export const CLASS_TICKER: Record<AssetClass, string> = { us_equity: "VTI", intl
 // ---------- rules ----------
 
 declare global {
-  var __paperTerminalRulesSeeded: boolean | undefined;
+  var __folioRulesSeeded: boolean | undefined;
 }
 
 /** Seed/refresh the official rules table from the verified source file, then load it. */
 export async function getRuleBook(): Promise<{ book: RuleBook; rows: RuleValue[] }> {
-  if (!globalThis.__paperTerminalRulesSeeded) {
+  if (!globalThis.__folioRulesSeeded) {
     for (const r of RULES) {
       await db()
         .insert(accountRules)
@@ -55,7 +55,7 @@ export async function getRuleBook(): Promise<{ book: RuleBook; rows: RuleValue[]
           set: { value: r.value, sourceUrl: r.sourceUrl, quote: r.quote, verifiedAt: r.verifiedAt },
         });
     }
-    globalThis.__paperTerminalRulesSeeded = true;
+    globalThis.__folioRulesSeeded = true;
   }
   const rows = (await db().select().from(accountRules)) as RuleValue[];
   return { book: ruleBook(rows), rows };

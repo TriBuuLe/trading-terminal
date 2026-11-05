@@ -8,7 +8,7 @@ import { parseEnv, type Env } from "./env-schema";
 export type { Env };
 
 declare global {
-  var __paperTerminalEnv: Env | undefined;
+  var __folioEnv: Env | undefined;
 }
 
 /**
@@ -16,9 +16,9 @@ declare global {
  * invalid or anything points at live trading.
  */
 export function env(): Env {
-  if (!globalThis.__paperTerminalEnv) {
+  if (!globalThis.__folioEnv) {
     assertPaperOnly(process.env);
-    globalThis.__paperTerminalEnv = parseEnv(process.env);
+    globalThis.__folioEnv = parseEnv(process.env);
   }
-  return globalThis.__paperTerminalEnv;
+  return globalThis.__folioEnv;
 }

@@ -5,6 +5,7 @@ import { DEFAULT_ASSUMPTIONS } from "@/lib/planner/assumptions";
 import { rollForward, type MonthActuals, type RollEntry } from "@/lib/planner/autoroll";
 import { addMonths } from "@/lib/planner/core";
 import { buildPlan, type Plan } from "@/lib/planner/plan";
+import { analyzeSpending, type SpendingAnalysis } from "@/lib/planner/spending";
 import { assumptionsSchema, profileSchema } from "@/lib/planner/schema";
 import type { Assumptions, Profile } from "@/lib/planner/types";
 import { etParts } from "@/lib/time";
@@ -98,11 +99,42 @@ export async function saveAssumptions(a: Assumptions | null): Promise<void> {
     .onConflictDoUpdate({ target: settings.key, set: { value: v, updatedAt: new Date() } });
 }
 
-export async function getPlan(opts: { profile?: Profile; runs?: number } = {}): Promise<{ plan: Plan; profile: Profile; assumptions: Assumptions } | null> {
+export interface PlanResult {
+  plan: Plan;
+  profile: Profile;
+  assumptions: Assumptions;
+  spending: SpendingAnalysis;
+  /** Which budget the plan used. "actual" needs at least one complete month of transactions. */
+  basis: "planned" | "actual";
+  /** Headline numbers with the OTHER budget, for comparison. */
+  alternate: { basis: "planned" | "actual"; available: number; shortfall: number; goals: { name: string; probability: number | null }[] } | null;
+}
+
+export async function getSpending(profile: Profile): Promise<SpendingAnalysis> {
+  const txs = await listTransactions();
+  return analyzeSpending({ expenses: profile.expenses, txs, today: etParts(new Date()).date, categoryMap: profile.categoryMap });
+}
+
+export async function getPlan(opts: { profile?: Profile; runs?: number } = {}): Promise<PlanResult | null> {
   const profile = opts.profile ?? (await getProfile());
   if (!profile) return null;
   const assumptions = await getAssumptions();
-  return { plan: buildPlan(profile, assumptions, thisMonth(), { runs: opts.runs ?? 5000 }), profile, assumptions };
+  const spending = await getSpending(profile);
+  const hasActual = spending.completeMonths.length > 0;
+  const basis = profile.budgetBasis === "actual" && hasActual ? "actual" : "planned";
+  const withActual = { ...profile, expenses: spending.actualBasisExpenses };
+  const plan = buildPlan(basis === "actual" ? withActual : profile, assumptions, thisMonth(), { runs: opts.runs ?? 5000 });
+  let alternate: PlanResult["alternate"] = null;
+  if (hasActual) {
+    const other = buildPlan(basis === "actual" ? profile : withActual, assumptions, thisMonth(), { runs: 1000 });
+    alternate = {
+      basis: basis === "actual" ? "planned" : "actual",
+      available: other.cashFlow.available,
+      shortfall: other.feasibility.shortfall,
+      goals: other.goals.map((g) => ({ name: g.goal.name, probability: g.sim.probability })),
+    };
+  }
+  return { plan, profile, assumptions, spending, basis, alternate };
 }
 
 // ---------- transactions ----------

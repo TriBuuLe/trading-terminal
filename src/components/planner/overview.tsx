@@ -12,6 +12,7 @@ import { fundsForMix } from "@/lib/planner/portfolios";
 import type { Assumptions, Country } from "@/lib/planner/types";
 import { cn } from "@/lib/utils";
 import { EmptyState, ErrorState, LoadingRows, Tag } from "../terminal/bits";
+import { BudgetCheck, type PlanResponseExtras } from "./budget-check";
 
 const SERIES = { needs: "#3987e5", wants: "#d95926", debt: "#c98500", savings: "#199e70" };
 
@@ -278,7 +279,7 @@ function CheckInCard() {
 }
 
 export function PlanOverview({ country }: { country: Country }) {
-  const q = useQuery({ queryKey: ["plan"], queryFn: () => api<{ plan: Plan | null; assumptions: Assumptions }>("/api/finances/plan") });
+  const q = useQuery({ queryKey: ["plan"], queryFn: () => api<{ plan: Plan | null; assumptions: Assumptions } & Partial<PlanResponseExtras>>("/api/finances/plan") });
   if (q.isPending) return <LoadingRows rows={10} />;
   if (q.isError) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
   const plan = q.data.plan;
@@ -307,6 +308,11 @@ export function PlanOverview({ country }: { country: Country }) {
       </div>
 
       <div className={cn("rounded-md border p-3 text-xs", plan.feasibility.shortfall > 0 ? "border-down/40 bg-down-muted" : "border-up/40 bg-up-muted")}>
+        {q.data.basis && (
+          <p className="mb-1 text-[10px] tracking-wider text-muted-foreground uppercase">
+            Using {q.data.basis === "actual" ? `your actual spending (average of ${q.data.spending?.completeMonths.join(", ")})` : "your budget"} · switch in Budget check below
+          </p>
+        )}
         <p>{plan.feasibility.message}</p>
         {plan.cuts.length > 0 && (
           <p className="mt-1 text-muted-foreground">
@@ -432,7 +438,7 @@ export function PlanOverview({ country }: { country: Country }) {
             <p className="text-xs text-muted-foreground">No debts.</p>
           </Card>
         )}
-        <CheckInCard />
+        {q.data.spending ? <BudgetCheck x={q.data as PlanResponseExtras} /> : <CheckInCard />}
       </div>
 
       <NetWorthChart plan={plan} assumptions={a} />

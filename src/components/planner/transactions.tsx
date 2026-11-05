@@ -10,6 +10,7 @@ import { CATEGORY_RULES, flipSigns, type ParsedTx } from "@/lib/planner/csv";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows, Tag } from "../terminal/bits";
+import { SpendingTable, type PlanResponseExtras } from "./budget-check";
 
 const CATEGORIES = [...new Set([...CATEGORY_RULES.map(([c]) => c), "Other", "Uncategorized"])];
 
@@ -41,8 +42,18 @@ export function Transactions() {
   const [cardMode, setCardMode] = useState(false);
   const list = useQuery({ queryKey: ["transactions", month], queryFn: () => api<StoredTx[]>(`/api/finances/transactions?month=${month}`) });
   const months = useQuery({ queryKey: ["transactions", "months"], queryFn: () => api<{ month: string; count: number }[]>("/api/finances/transactions?months=1") });
+  const plan = useQuery({
+    queryKey: ["plan"],
+    queryFn: () => api<{ plan: unknown } & Partial<PlanResponseExtras>>("/api/finances/plan"),
+    select: (d) => ({ ...d, budgetLines: (d.spending?.rows ?? []).flatMap((r) => (r.planCategory ? [r.planCategory] : [])) }),
+  });
   const refresh = () =>
-    Promise.all([qc.invalidateQueries({ queryKey: ["transactions"] }), qc.invalidateQueries({ queryKey: ["checkin"] }), qc.invalidateQueries({ queryKey: ["networth-history"] })]);
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ["transactions"] }),
+      qc.invalidateQueries({ queryKey: ["checkin"] }),
+      qc.invalidateQueries({ queryKey: ["networth-history"] }),
+      qc.invalidateQueries({ queryKey: ["plan"] }),
+    ]);
   const shown = preview ? (cardMode ? flipSigns(preview.rows) : preview.rows) : [];
 
   const upload = async (file: File) => {
@@ -75,6 +86,7 @@ export function Transactions() {
 
   return (
     <div className="space-y-3">
+      {plan.data?.spending && plan.data.plan !== null && <SpendingTable x={plan.data as PlanResponseExtras} budgetLines={plan.data.budgetLines} />}
       <section className="rounded-md border border-border bg-background/40 p-3">
         <h3 className="text-xs font-semibold">Import a bank or credit-card CSV</h3>
         <p className="mt-0.5 text-[11px] text-muted-foreground">

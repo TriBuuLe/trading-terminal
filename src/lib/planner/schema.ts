@@ -72,6 +72,7 @@ export const profileSchema = z.object({
       stateRatePct: z.number().min(0).max(20).nullable().optional(),
     })
     .optional(),
+  autoRoll: z.object({ enabled: z.boolean(), cashAccountId: z.string().min(1).max(40), lastRolledMonth: ym }).optional(),
 });
 
 /** Problems that would make the plan silently wrong (shown in the editor, enforced on save). */

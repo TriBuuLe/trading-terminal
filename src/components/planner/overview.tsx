@@ -87,6 +87,56 @@ const STEP_ICON = { done: CheckCircle2, active: CircleDot, waiting: Circle } as 
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+interface RollEntry {
+  month: string;
+  source: "actual" | "estimated";
+  income: number;
+  spending: number;
+  debtPayments: number;
+  debtInterest: number;
+  cashAfter: number;
+  debtAfter: number;
+  netWorth: number;
+}
+
+/** Net worth month by month from the automatic monthly updates, plus today. */
+function NetWorthHistory({ current }: { current: number }) {
+  const q = useQuery({ queryKey: ["networth-history"], queryFn: () => api<RollEntry[]>("/api/finances/networth") });
+  const hist = q.data ?? [];
+  const data = [...hist.map((e) => ({ label: e.month, value: e.netWorth })), { label: "now", value: current }];
+  const last = hist.at(-1);
+  return (
+    <Card title="Net worth over time">
+      {hist.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">
+          Today: <span className="num">{money(current)}</span>. Turn on “Update balances automatically each month” under My finances → Accounts & savings, and a point is added
+          here after every month ends (income in, spending and debt payments out).
+        </p>
+      ) : (
+        <>
+          <div className="h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
+                <CartesianGrid stroke="#1f2125" vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: "#8b8d93", fontSize: 10 }} tickLine={false} axisLine={{ stroke: "#2a2c31" }} />
+                <YAxis tick={{ fill: "#8b8d93", fontSize: 10 }} tickLine={false} axisLine={false} width={64} tickFormatter={(v: number) => money(v, { compact: true, whole: true })} />
+                <Tooltip contentStyle={{ background: "#1c1d21", border: "1px solid #2a2c31", borderRadius: 6, fontSize: 11 }} formatter={(v) => [money(Number(v)), "net worth"]} />
+                <Line dataKey="value" stroke="#3987e5" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          {last && (
+            <p className="num mt-1 text-[11px] text-muted-foreground">
+              {last.month} ({last.source === "actual" ? "from your transactions" : "estimated from the plan"}): +{money(last.income)} income · −{money(last.spending)} spending · −
+              {money(last.debtPayments)} debt payments ({money(last.debtInterest)} of it interest) → net worth {money(last.netWorth)}
+            </p>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
 /** The 12 months the income average is made of: one bar per month, the average as a dashed line. */
 function IncomeTimeline({ plan }: { plan: Plan }) {
   const months = plan.incomeByMonth;
@@ -251,7 +301,10 @@ export function PlanOverview({ country }: { country: Country }) {
         <Tile label="Net worth today" value={money(plan.netWorth.current)} sub={`median in ${plan.netWorth.years}y: ${money(plan.netWorth.sim.p50, { compact: true, whole: true })} (today's $)`} />
       </div>
 
-      <IncomeTimeline plan={plan} />
+      <div className="grid gap-3 @4xl:grid-cols-2">
+        <IncomeTimeline plan={plan} />
+        <NetWorthHistory current={plan.netWorth.current} />
+      </div>
 
       <div className={cn("rounded-md border p-3 text-xs", plan.feasibility.shortfall > 0 ? "border-down/40 bg-down-muted" : "border-up/40 bg-up-muted")}>
         <p>{plan.feasibility.message}</p>

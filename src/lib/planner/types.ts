@@ -99,6 +99,8 @@ export interface Profile {
   highInterestAprPct: number;
   /** Tax facts for account eligibility (encrypted with the rest of the profile). */
   tax?: TaxFacts;
+  /** Monthly automatic balance updates (income in, spending and debt payments out). */
+  autoRoll?: { enabled: boolean; cashAccountId: string; lastRolledMonth: YearMonth };
 }
 
 export interface TaxFacts {

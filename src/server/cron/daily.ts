@@ -10,6 +10,7 @@ import { finnhubConfigured } from "../finnhub";
 import { nextEarnings } from "../fundamentals";
 import { syncAssets } from "../orders";
 import { normalizeSnapshot } from "../quotes";
+import { applyAutoRoll } from "../finances";
 import { runSchedules } from "../mock-broker";
 import { syncFills, syncOrders } from "../sync";
 
@@ -102,6 +103,11 @@ export async function runDailyJob(): Promise<{ ok: boolean; steps: StepResult[];
       created++;
     }
     return `checked ${checked.length} symbols (${watched.length} watched not auto-checked), ${created} new earnings notices`;
+  });
+
+  await step("monthly-balance-update", async () => {
+    const r = await applyAutoRoll();
+    return r.length ? `applied ${r.map((e) => `${e.month} (${e.source})`).join(", ")}` : "nothing to apply (off, or no finished month pending)";
   });
 
   await step("auto-contributions", async () => {

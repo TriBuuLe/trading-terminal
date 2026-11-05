@@ -2,6 +2,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { finRecords, finTransactions, planVersions, settings } from "@/db/schema";
 import { DEFAULT_ASSUMPTIONS } from "@/lib/planner/assumptions";
+import { rollForward, type MonthActuals, type RollEntry } from "@/lib/planner/autoroll";
 import { addMonths } from "@/lib/planner/core";
 import { buildPlan, type Plan } from "@/lib/planner/plan";
 import { assumptionsSchema, profileSchema } from "@/lib/planner/schema";
@@ -17,10 +18,57 @@ import { env } from "./env";
 const key = () => parseKey(env().DATA_ENCRYPTION_KEY);
 export const thisMonth = () => etParts(new Date()).date.slice(0, 7);
 
+/** The saved profile, with any finished months auto-applied first (if auto-update is on). */
 export async function getProfile(): Promise<Profile | null> {
+  await applyAutoRoll();
   const rows = await db().select().from(finRecords).where(eq(finRecords.key, "profile")).limit(1);
   if (!rows[0]) return null;
   return profileSchema.parse(decryptJson(rows[0].ciphertext, "fin:profile", key()));
+}
+
+/**
+ * Apply every finished month to the balances (income in; spending and debt
+ * payments out), using imported transactions where a month has them. Runs in
+ * a transaction that locks the profile row, so concurrent requests can't apply
+ * a month twice. Returns the months applied.
+ */
+export async function applyAutoRoll(): Promise<RollEntry[]> {
+  const k = key();
+  return db().transaction(async (tx) => {
+    const rows = await tx.select().from(finRecords).where(eq(finRecords.key, "profile")).for("update").limit(1);
+    if (!rows[0]) return [];
+    const p = profileSchema.parse(decryptJson(rows[0].ciphertext, "fin:profile", k));
+    if (!p.autoRoll?.enabled) return [];
+    // Actual income/spending per month from imported transactions (transfers excluded).
+    const txRows = await tx.select().from(finTransactions);
+    const byMonth = new Map<string, MonthActuals>();
+    for (const r of txRows) {
+      if (r.ciphertext === "pending") continue;
+      const t = decryptJson<Omit<StoredTx, "id">>(r.ciphertext, `fin:tx:${r.id}`, k);
+      if (t.category === "Transfers") continue;
+      const m = byMonth.get(r.month) ?? { income: 0, spending: 0 };
+      if (t.amount > 0) m.income += t.amount;
+      else m.spending += -t.amount;
+      byMonth.set(r.month, m);
+    }
+    const { profile, entries } = rollForward(p, thisMonth(), (m) => byMonth.get(m) ?? null);
+    if (!entries.length) return [];
+    await tx.update(finRecords).set({ ciphertext: encryptJson(profile, "fin:profile", k), updatedAt: new Date() }).where(eq(finRecords.key, "profile"));
+    const hist = await tx.select().from(finRecords).where(eq(finRecords.key, "networth_history")).limit(1);
+    const prev = hist[0] ? decryptJson<RollEntry[]>(hist[0].ciphertext, "fin:networth_history", k) : [];
+    const merged = [...prev.filter((e) => !entries.some((n) => n.month === e.month)), ...entries].sort((a, b) => a.month.localeCompare(b.month));
+    const ciphertext = encryptJson(merged, "fin:networth_history", k);
+    await tx
+      .insert(finRecords)
+      .values({ key: "networth_history", ciphertext, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: finRecords.key, set: { ciphertext, updatedAt: new Date() } });
+    return entries;
+  });
+}
+
+export async function netWorthHistory(): Promise<RollEntry[]> {
+  const rows = await db().select().from(finRecords).where(eq(finRecords.key, "networth_history")).limit(1);
+  return rows[0] ? decryptJson<RollEntry[]>(rows[0].ciphertext, "fin:networth_history", key()) : [];
 }
 
 export async function saveProfile(p: Profile): Promise<void> {
@@ -154,6 +202,7 @@ export async function exportAll() {
     assumptions: await getAssumptions(),
     transactions: await listTransactions(),
     planVersions: await listVersions(),
+    netWorthHistory: await netWorthHistory(),
   };
 }
 

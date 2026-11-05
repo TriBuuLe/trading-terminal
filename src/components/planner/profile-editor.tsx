@@ -392,7 +392,51 @@ export function AccountSection({ p, set }: { p: Profile; set: Set }) {
           </div>
         ))}
       </div>
+      <AutoRollControl p={p} set={set} />
     </Section>
+  );
+}
+
+/** Turn on monthly automatic balance updates. */
+function AutoRollControl({ p, set }: { p: Profile; set: Set }) {
+  const now = ymOf(useNow(60 * 60_000));
+  const cashAccounts = p.accounts.filter((a) => a.type === "CASH" || a.type === "HISA");
+  const ar = p.autoRoll;
+  if (cashAccounts.length === 0) return <p className="mt-2 text-[11px] text-muted-foreground">Add a chequing (CASH) account to turn on automatic monthly updates.</p>;
+  const nextApply = ar?.enabled ? addMonths(ar.lastRolledMonth, 1) : now;
+  return (
+    <div className="mt-3 space-y-1 rounded border border-border p-2 text-xs">
+      <label className="flex flex-wrap items-center gap-2">
+        <input
+          type="checkbox"
+          checked={ar?.enabled ?? false}
+          onChange={(e) =>
+            set((x) => ({
+              ...x,
+              // Start from now: the first update applies THIS month once it ends (nothing retroactive).
+              autoRoll: { enabled: e.target.checked, cashAccountId: x.autoRoll?.cashAccountId ?? cashAccounts[0]!.id, lastRolledMonth: x.autoRoll?.enabled ? x.autoRoll.lastRolledMonth : addMonths(now, -1) },
+            }))
+          }
+        />
+        Update balances automatically each month in
+        <select
+          aria-label="Account for automatic updates"
+          className={inp}
+          value={ar?.cashAccountId ?? cashAccounts[0]!.id}
+          onChange={(e) => set((x) => ({ ...x, autoRoll: { enabled: x.autoRoll?.enabled ?? false, lastRolledMonth: x.autoRoll?.lastRolledMonth ?? addMonths(now, -1), cashAccountId: e.target.value } }))}
+        >
+          {cashAccounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="text-[10px] text-muted-foreground">
+        After each month ends: + that month&apos;s take-home income, − spending, − minimum debt payments (debts get their interest and shrink by the payment). If you imported a bank
+        CSV for the month, the real transactions are used instead of the plan. {ar?.enabled ? `Next update: ${nextApply}, once it's over.` : ""} You can always correct a balance by hand.
+      </p>
+    </div>
   );
 }
 

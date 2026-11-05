@@ -25,11 +25,13 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const inp = "h-7 rounded-md border border-input bg-background px-2 text-xs outline-none focus:border-ring";
 const numInp = cn(inp, "num w-28 text-right");
 
+/** A fresh profile starts as you: Tri, Rock Hill, South Carolina (US), 21. */
 export function emptyProfile(): Profile {
   return {
-    country: "CA",
-    region: "ON",
-    age: 22,
+    preferredName: "Tri",
+    country: "US",
+    region: "SC",
+    age: 21,
     crossBorder: false,
     incomes: [],
     expenses: [],
@@ -109,6 +111,10 @@ export function BasicsSection({ p, set }: { p: Profile; set: Set }) {
       hint="Country decides which account types and tax rules the plan uses (TFSA/RRSP/FHSA vs 401(k)/IRA/HSA). For before-tax US income, the state is used for state income tax where rules are verified (currently North Carolina); for other states, enter a rate estimate under Tax facts. Canadian tax estimates aren't built yet."
     >
       <div className="flex flex-wrap items-end gap-3 text-xs">
+        <label className="grid gap-1">
+          Name
+          <input aria-label="Name" className={cn(inp, "w-32")} value={p.preferredName ?? ""} onChange={(e) => set((x) => ({ ...x, preferredName: e.target.value || undefined }))} />
+        </label>
         <label className="grid gap-1">
           Country
           <select className={inp} value={p.country} onChange={(e) => set((x) => ({ ...x, country: e.target.value as Profile["country"] }))}>

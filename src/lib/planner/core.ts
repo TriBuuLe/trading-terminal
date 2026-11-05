@@ -4,9 +4,11 @@ import type { Debt, Expense, Frequency, IncomeStream, RiskAnswers, YearMonth } f
 
 export const round2 = (x: number) => Math.round((x + Number.EPSILON) * 100) / 100;
 
-const PER_YEAR: Record<Frequency, number> = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, annual: 1 };
+const PER_YEAR: Record<Exclude<Frequency, "hourly">, number> = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, annual: 1 };
 
-export function monthlyEquivalent(amount: number, frequency: Frequency): number {
+/** Monthly equivalent. Hourly = rate × hours/week × 52 weeks ÷ 12 months. */
+export function monthlyEquivalent(amount: number, frequency: Frequency, hoursPerWeek = 40): number {
+  if (frequency === "hourly") return (amount * hoursPerWeek * 52) / 12;
   return (amount * PER_YEAR[frequency]) / 12;
 }
 
@@ -27,7 +29,7 @@ export function incomeInMonth(streams: IncomeStream[], month: YearMonth): number
   let total = 0;
   for (const s of streams) {
     if (!isActive(s, month)) continue;
-    let amt = monthlyEquivalent(s.amount, s.frequency);
+    let amt = monthlyEquivalent(s.amount, s.frequency, s.hoursPerWeek);
     if (s.annualRaisePct && s.startMonth) {
       const years = Number(month.slice(0, 4)) - Number(s.startMonth.slice(0, 4));
       if (years > 0) amt *= (1 + s.annualRaisePct / 100) ** years;

@@ -1,15 +1,19 @@
 /** Financial-planner domain types. All money is in dollars of the stated currency. */
 
 export type Country = "CA" | "US";
-export type Frequency = "weekly" | "biweekly" | "semimonthly" | "monthly" | "annual";
+export type Frequency = "hourly" | "weekly" | "biweekly" | "semimonthly" | "monthly" | "annual";
 export type YearMonth = string; // "YYYY-MM"
 
 export interface IncomeStream {
   id: string;
   name: string;
-  /** Take-home (after-tax) amount per pay period. */
+  /** Amount per pay period (or per hour). Take-home unless basis is "gross". */
   amount: number;
   frequency: Frequency;
+  /** For hourly pay. */
+  hoursPerWeek?: number;
+  /** "net" = take-home (default); "gross" = before tax: the app estimates taxes. */
+  basis?: "net" | "gross";
   kind: "salary" | "coop" | "bonus" | "other";
   /** Active window (inclusive). Co-op terms vs school terms are separate streams with windows. */
   startMonth?: YearMonth | null;
@@ -111,6 +115,10 @@ export interface TaxFacts {
   /** Real TFSA contributions/withdrawals outside this app, if any (from CRA My Account). */
   tfsaRoomOverride?: number | null;
   birthYear?: number;
+  /** Pre-tax payroll deductions per year (traditional 401(k), health premiums): lower income tax, not FICA. */
+  pretaxAnnual?: number;
+  /** Your own flat state income-tax estimate (%) for states without verified rules. */
+  stateRatePct?: number | null;
 }
 
 export interface AssetClassAssumption {

@@ -1,6 +1,4 @@
 import {
-  averageIncome,
-  incomeTimeline,
   cashFlow,
   cutSuggestions,
   emergencyFundTarget,
@@ -17,6 +15,8 @@ import {
   type HorizonBand,
   type PayoffResult,
 } from "./core";
+import type { YearTax } from "../tax/calc";
+import { netIncome } from "./net";
 import { expectedReturnPct, requiredForProbability, simulate, type Mix, type SimResult } from "./montecarlo";
 
 /** Goals are planned for 80% odds of being on time (a 50/50 plan fails half the time). */
@@ -73,7 +73,10 @@ export interface Plan {
   realDollars: true;
   monthlyIncome: number;
   /** Income month by month for the next 12 months (what the average is made of). */
-  incomeByMonth: { month: YearMonth; amount: number }[];
+  incomeByMonth: { month: YearMonth; amount: number; gross: number }[];
+  /** Estimated taxes per calendar year for "before tax" income (US). */
+  taxes: YearTax[];
+  incomeNotes: string[];
   cashFlow: CashFlow;
   /** What's inside "needs" and "wants" (for the legend). */
   spending: { needs: { category: string; monthly: number }[]; wants: { category: string; monthly: number }[] };
@@ -103,7 +106,9 @@ const CROSS_BORDER =
 export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { runs?: number; seed?: number } = {}): Plan {
   const runs = opts.runs ?? 5000;
   const seed = opts.seed ?? 42;
-  const income = averageIncome(p.incomes, asOf, 12);
+  // Take-home income: "before tax" lines are converted with the year's estimated taxes.
+  const net = netIncome(p, asOf, 12);
+  const income = net.average;
   const cf = cashFlow(income, p.expenses, p.debts);
   const score = riskScore(p.risk);
   const effective = p.riskOverride ?? score;
@@ -278,7 +283,9 @@ export function buildPlan(p: Profile, a: Assumptions, asOf: YearMonth, opts: { r
     asOf,
     realDollars: true,
     monthlyIncome: round2(income),
-    incomeByMonth: incomeTimeline(p.incomes, asOf, 12),
+    incomeByMonth: net.byMonth,
+    taxes: net.taxes,
+    incomeNotes: net.notes,
     cashFlow: cf,
     spending: {
       needs: p.expenses.filter((e) => e.kind === "need" && e.monthly > 0).map((e) => ({ category: e.category, monthly: e.monthly })),

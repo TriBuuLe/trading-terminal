@@ -4,6 +4,9 @@ import { Plus, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useNow } from "@/hooks/use-now";
 import { addMonths, averageIncome, incomeInMonth, monthlyEquivalent, overrideWarning, riskScore } from "@/lib/planner/core";
+import { derivedTaxFacts, netIncome } from "@/lib/planner/net";
+import { TAX_YEARS } from "@/lib/tax/rules";
+import type { YearTax } from "@/lib/tax/calc";
 import type { AccountType, Profile } from "@/lib/planner/types";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +49,21 @@ function Num({ value, onChange, step = 1, label, className }: { value: number; o
   );
 }
 
+/** Optional number: empty means "not set" (so a calculated default can be used). */
+function OptNum({ value, onChange, label, placeholder }: { value: number | undefined; onChange: (n: number | undefined) => void; label: string; placeholder?: string }) {
+  return (
+    <input
+      aria-label={label}
+      type="number"
+      min={0}
+      className={numInp}
+      placeholder={placeholder}
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+    />
+  );
+}
+
 function Section({ title, hint, children, onAdd, addLabel }: { title: string; hint?: ReactNode; children: ReactNode; onAdd?: () => void; addLabel?: string }) {
   return (
     <section className="rounded-md border border-border bg-background/40 p-3">
@@ -79,7 +97,7 @@ export function BasicsSection({ p, set }: { p: Profile; set: Set }) {
   return (
     <Section
       title="About you"
-      hint="Country decides which account types and tax rules the plan uses (TFSA/RRSP/FHSA vs 401(k)/IRA/HSA). Province/state is saved for reference only: the app doesn't calculate state or provincial tax. Income is entered after tax, and tax estimates use the marginal rate you set under Tax facts (use your combined federal + state rate)."
+      hint="Country decides which account types and tax rules the plan uses (TFSA/RRSP/FHSA vs 401(k)/IRA/HSA). For before-tax US income, the state is used for state income tax where rules are verified (currently North Carolina); for other states, enter a rate estimate under Tax facts. Canadian tax estimates aren't built yet."
     >
       <div className="flex flex-wrap items-end gap-3 text-xs">
         <label className="grid gap-1">
@@ -110,6 +128,51 @@ const ymOf = (ms: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
 
+const usd = (x: number) => `$${x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Estimated tax per calendar year on "before tax" income. */
+function TaxBreakdown({ taxes }: { taxes: YearTax[] }) {
+  return (
+    <div className="mt-2 overflow-x-auto rounded border border-border p-2">
+      <p className="mb-1 text-[11px] font-medium">Estimated taxes on before-tax pay (whole calendar year)</p>
+      <table className="w-full text-[11px]">
+        <thead className="text-[10px] text-muted-foreground uppercase">
+          <tr className="text-right">
+            <th className="text-left font-medium">Year</th>
+            <th className="font-medium">Gross</th>
+            <th className="font-medium">Federal</th>
+            <th className="font-medium">Social Security</th>
+            <th className="font-medium">Medicare</th>
+            <th className="font-medium">State</th>
+            <th className="font-medium">Take-home</th>
+            <th className="font-medium">Effective</th>
+            <th className="font-medium" title="Federal bracket + state rate on your next dollar">Marginal</th>
+          </tr>
+        </thead>
+        <tbody className="num">
+          {taxes.map((t) => (
+            <tr key={t.year} className="border-t border-border/50 text-right">
+              <td className="py-0.5 text-left">{t.year}</td>
+              <td>{usd(t.gross)}</td>
+              <td>−{usd(t.federal)}</td>
+              <td>−{usd(t.socialSecurity)}</td>
+              <td>−{usd(t.medicare + t.additionalMedicare)}</td>
+              <td>{t.state === null ? "not modeled" : `−${usd(t.state)}`}</td>
+              <td className="text-up">{usd(t.net)}</td>
+              <td>{t.effectivePct.toFixed(1)}%</td>
+              <td>{t.marginalPct.toFixed(2)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-1 text-[10px] text-muted-foreground">
+        Tax you owe for the year with the standard deduction: 2026 IRS brackets (Rev. Proc. 2025-32), Social Security 6.2% up to $184,500, Medicare 1.45% (+0.9% over the
+        threshold), NC 3.99%. Paychecks may withhold more than this during a short co-op term; the difference comes back as a refund. Not modeled: credits, itemizing, local tax.
+      </p>
+    </div>
+  );
+}
+
 /** How one income line feeds the plan: active months in the next 12 and its share of the average. */
 function IncomeEffect({ i, now }: { i: Profile["incomes"][number]; now: string }) {
   if (!i.repeatsYearly && i.startMonth && i.endMonth && i.endMonth < i.startMonth) {
@@ -129,10 +192,12 @@ function IncomeEffect({ i, now }: { i: Profile["incomes"][number]; now: string }
   }
   const active = Array.from({ length: 12 }, (_, k) => incomeInMonth([i], addMonths(now, k))).filter((v) => v > 0).length;
   const avg = averageIncome([i], now, 12);
+  const label = i.basis === "gross" ? " before tax" : "";
   return (
     <p className="text-[10px] text-muted-foreground">
-      Active {active} of the next 12 months → adds ${avg.toFixed(2)}/month to your average
-      {active > 0 && active < 12 && ` ($${monthlyEquivalent(i.amount, i.frequency).toFixed(2)}/month while active)`}
+      {i.frequency === "hourly" && `$${i.amount}/hr × ${i.hoursPerWeek ?? 40} h/week = $${monthlyEquivalent(i.amount, "hourly", i.hoursPerWeek).toFixed(2)}/month${label}. `}
+      Active {active} of the next 12 months → adds ${avg.toFixed(2)}/month{label} to your average
+      {active > 0 && active < 12 && ` ($${monthlyEquivalent(i.amount, i.frequency, i.hoursPerWeek).toFixed(2)}/month${label} while active)`}
       {active === 0 && i.amount > 0 && " (it starts more than 12 months from now)"}
       {i.repeatsYearly && i.startMonth && i.endMonth && ` · every year, ${i.startMonth.slice(5)}→${i.endMonth.slice(5)} (month numbers)`}.
     </p>
@@ -142,12 +207,21 @@ function IncomeEffect({ i, now }: { i: Profile["incomes"][number]; now: string }
 export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
   const upd = (id: string, patch: Partial<Profile["incomes"][number]>) => set((x) => ({ ...x, incomes: x.incomes.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
   const now = ymOf(useNow(60 * 60_000));
-  const total = averageIncome(p.incomes, now, 12);
+  const net = netIncome(p, now, 12);
   return (
     <Section
-      title="Income (take-home, after tax)"
-      hint="Add co-op terms and school-year jobs as separate lines with their start/end months; the plan averages the next 12 months."
-      onAdd={() => set((x) => ({ ...x, incomes: [...x.incomes, { id: uid(), name: "Job", amount: 0, frequency: "biweekly", kind: "salary", startMonth: null, endMonth: null }] }))}
+      title="Income"
+      hint={
+        p.country === "US"
+          ? "Enter pay before tax (salary or $/hour) and the app estimates federal, Social Security, Medicare and state tax, or enter take-home pay if you know it. Add co-op terms as separate lines with start/end months; the plan averages the next 12 months."
+          : "Enter take-home pay (after tax). Canadian tax estimates aren't built yet. Add co-op terms as separate lines with start/end months; the plan averages the next 12 months."
+      }
+      onAdd={() =>
+        set((x) => ({
+          ...x,
+          incomes: [...x.incomes, { id: uid(), name: "Job", amount: 0, frequency: "monthly", kind: "salary", basis: x.country === "US" ? "gross" : "net", startMonth: null, endMonth: null }],
+        }))
+      }
     >
       {p.incomes.length === 0 && <p className="text-[11px] text-muted-foreground">No income yet.</p>}
       <div className="space-y-1.5">
@@ -155,14 +229,27 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
           <div key={i.id} className="space-y-0.5">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <input aria-label="Income name" className={cn(inp, "w-36")} value={i.name} onChange={(e) => upd(i.id, { name: e.target.value })} />
-            <Num label="Amount per period" value={i.amount} onChange={(n) => upd(i.id, { amount: n })} />
-            <select aria-label="Frequency" className={inp} value={i.frequency} onChange={(e) => upd(i.id, { frequency: e.target.value as typeof i.frequency })}>
+            <span className="text-muted-foreground">$</span>
+            <Num label="Amount" value={i.amount} step={i.frequency === "hourly" ? 0.25 : 1} onChange={(n) => upd(i.id, { amount: n })} className="w-24" />
+            <select aria-label="Pay basis" className={inp} value={i.basis ?? "net"} onChange={(e) => upd(i.id, { basis: e.target.value as "net" | "gross" })}>
+              <option value="gross" disabled={p.country !== "US"}>
+                before tax{p.country !== "US" ? " (US only)" : ""}
+              </option>
+              <option value="net">take-home</option>
+            </select>
+            <select aria-label="Frequency" className={inp} value={i.frequency} onChange={(e) => upd(i.id, { frequency: e.target.value as typeof i.frequency, ...(e.target.value === "hourly" && !i.hoursPerWeek ? { hoursPerWeek: 40 } : {}) })}>
+              <option value="hourly">per hour</option>
               <option value="weekly">weekly</option>
               <option value="biweekly">every 2 weeks</option>
               <option value="semimonthly">twice a month</option>
               <option value="monthly">monthly</option>
               <option value="annual">yearly</option>
             </select>
+            {i.frequency === "hourly" && (
+              <label className="flex items-center gap-1 text-muted-foreground">
+                × <Num label="Hours per week" value={i.hoursPerWeek ?? 40} onChange={(n) => upd(i.id, { hoursPerWeek: n })} className="w-14" /> h/week
+              </label>
+            )}
             <select aria-label="Kind" className={inp} value={i.kind} onChange={(e) => upd(i.id, { kind: e.target.value as typeof i.kind })}>
               <option value="salary">job</option>
               <option value="coop">co-op term</option>
@@ -186,9 +273,17 @@ export function IncomeSection({ p, set }: { p: Profile; set: Set }) {
           </div>
         ))}
       </div>
+      {net.taxes.length > 0 && <TaxBreakdown taxes={net.taxes} />}
+      {net.notes.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-[10px] text-amber-300">
+          {net.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      )}
       {p.incomes.length > 0 && (
         <p className="mt-2 text-[11px]">
-          Plan income (average of the next 12 months): <b className="num">${total.toFixed(2)}/month</b>
+          Plan income, take-home (average of the next 12 months): <b className="num">${net.average.toFixed(2)}/month</b>
         </p>
       )}
     </Section>
@@ -425,7 +520,9 @@ export const WIZARD_STEPS = [
 export function TaxFactsSection({ p, set }: { p: Profile; set: Set }) {
   const t = p.tax ?? {};
   const upd = (patch: Partial<NonNullable<Profile["tax"]>>) => set((x) => ({ ...x, tax: { ...(x.tax ?? {}), ...patch } }));
-  const usIncome = t.usEarnedIncome ?? 0;
+  const year = Number(ymOf(useNow(60 * 60_000)).slice(0, 4));
+  const derived = derivedTaxFacts(p, year);
+  const hasStateRules = p.region.toUpperCase() in (TAX_YEARS[2026]?.states ?? {});
   return (
     <Section
       title="Tax facts (for account eligibility)"
@@ -434,8 +531,14 @@ export function TaxFactsSection({ p, set }: { p: Profile; set: Set }) {
       <div className="grid gap-2 text-xs @3xl:grid-cols-2">
         <div className="space-y-1.5 rounded border border-border p-2">
           <p className="font-medium">United States (Roth/Traditional IRA, 401(k), HSA)</p>
+          {derived && (
+            <p className="text-[10px] text-muted-foreground">
+              Leave a field empty to use what&apos;s calculated from your before-tax income for {year}: earned income {usd(derived.earnedIncome)}, MAGI ≈ AGI {usd(derived.magi)},
+              marginal rate {derived.marginalPct}%.
+            </p>
+          )}
           <label className="flex items-center justify-between gap-2">
-            US earned income this year <Num label="US earned income" value={usIncome} onChange={(n) => upd({ usEarnedIncome: n })} />
+            US earned income this year <OptNum label="US earned income" value={t.usEarnedIncome} placeholder={derived ? String(Math.round(derived.earnedIncome)) : ""} onChange={(v) => upd({ usEarnedIncome: v })} />
           </label>
           <label className="flex items-center justify-between gap-2">
             Filing status
@@ -447,8 +550,17 @@ export function TaxFactsSection({ p, set }: { p: Profile; set: Set }) {
             </select>
           </label>
           <label className="flex items-center justify-between gap-2">
-            Estimated MAGI <Num label="MAGI" value={t.magi ?? 0} onChange={(n) => upd({ magi: n })} />
+            Estimated MAGI <OptNum label="MAGI" value={t.magi} placeholder={derived ? String(Math.round(derived.magi)) : ""} onChange={(v) => upd({ magi: v })} />
           </label>
+          <label className="flex items-center justify-between gap-2" title="Traditional 401(k), health/dental premiums taken from pay before tax">
+            Pre-tax payroll deductions / year <OptNum label="Pre-tax deductions" value={t.pretaxAnnual} placeholder="0" onChange={(v) => upd({ pretaxAnnual: v })} />
+          </label>
+          {!hasStateRules && (
+            <label className="flex items-center justify-between gap-2" title={`No verified tax rules for ${p.region || "your state"} yet`}>
+              State income-tax estimate for {p.region || "your state"} (%)
+              <OptNum label="State tax rate" value={t.stateRatePct ?? undefined} placeholder="0" onChange={(v) => upd({ stateRatePct: v ?? null })} />
+            </label>
+          )}
           <label className="flex items-center justify-between gap-2">
             HDHP coverage (for HSA)
             <select aria-label="HSA coverage" className={inp} value={t.hsaCoverage ?? "none"} onChange={(e) => upd({ hsaCoverage: e.target.value as "none" })}>
@@ -483,7 +595,8 @@ export function TaxFactsSection({ p, set }: { p: Profile; set: Set }) {
           </label>
         </div>
         <label className="flex items-center gap-2">
-          Marginal income-tax rate, federal + state combined (your estimate) <Num label="Marginal tax rate" value={t.marginalTaxPct ?? 22} onChange={(n) => upd({ marginalTaxPct: n })} className="w-16" />%
+          Marginal income-tax rate, federal + state combined{" "}
+          <OptNum label="Marginal tax rate" value={t.marginalTaxPct} placeholder={derived ? String(derived.marginalPct) : "22"} onChange={(v) => upd({ marginalTaxPct: v })} />%
           <span className="text-[10px] text-muted-foreground">used to estimate tax on non-qualified withdrawals</span>
         </label>
       </div>

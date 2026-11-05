@@ -9,7 +9,9 @@ export const incomeSchema = z.object({
   id,
   name: z.string().trim().min(1).max(60),
   amount: money,
-  frequency: z.enum(["weekly", "biweekly", "semimonthly", "monthly", "annual"]),
+  frequency: z.enum(["hourly", "weekly", "biweekly", "semimonthly", "monthly", "annual"]),
+  hoursPerWeek: z.number().min(0).max(100).optional(),
+  basis: z.enum(["net", "gross"]).optional(),
   kind: z.enum(["salary", "coop", "bonus", "other"]),
   startMonth: ym.nullable().optional(),
   endMonth: ym.nullable().optional(),
@@ -66,6 +68,8 @@ export const profileSchema = z.object({
       rrspUnusedRoom: z.number().min(0).max(1e7).optional(),
       tfsaRoomOverride: z.number().min(0).max(1e7).nullable().optional(),
       birthYear: z.number().int().min(1900).max(2100).optional(),
+      pretaxAnnual: z.number().min(0).max(1e7).optional(),
+      stateRatePct: z.number().min(0).max(20).nullable().optional(),
     })
     .optional(),
 });

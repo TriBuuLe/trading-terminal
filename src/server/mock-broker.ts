@@ -18,6 +18,7 @@ import {
 } from "@/lib/accounts/engine";
 import { MissingRuleError, RULES, rule, ruleBook, type RuleBook, type RuleValue } from "@/lib/accounts/rules";
 import { equityForRisk, riskScore } from "@/lib/planner/core";
+import { derivedTaxFacts } from "@/lib/planner/net";
 import type { Profile } from "@/lib/planner/types";
 import { etParts } from "@/lib/time";
 import { getSnapshots } from "./alpaca/market";
@@ -208,7 +209,14 @@ const year = () => Number(etParts(new Date()).date.slice(0, 4));
 export async function previewContribution(accountId: number, amount: number, taxYear?: number): Promise<ContributionPreview> {
   const { book } = await getRuleBook();
   const profile = await getProfile();
-  const tax = profile?.tax ?? {};
+  // Typed-in tax facts win; otherwise use values derived from "before tax" income.
+  const derived = profile ? derivedTaxFacts(profile, Number(etParts(new Date()).date.slice(0, 4))) : null;
+  const tax = {
+    ...(profile?.tax ?? {}),
+    usEarnedIncome: profile?.tax?.usEarnedIncome ?? derived?.earnedIncome,
+    magi: profile?.tax?.magi ?? derived?.magi,
+    filingStatus: profile?.tax?.filingStatus ?? (derived ? ("single" as const) : undefined),
+  };
   const acct = await getAccountState(accountId);
   const accts = await listAccounts();
   const now = new Date();
@@ -370,7 +378,7 @@ export async function previewWithdrawal(accountId: number, amount: number) {
     age: profile?.age ?? 30,
     year: y,
     firstContributionTaxYear: acct.firstContributionTaxYear,
-    marginalTaxPct: profile?.tax?.marginalTaxPct ?? 22,
+    marginalTaxPct: profile?.tax?.marginalTaxPct ?? (profile ? derivedTaxFacts(profile, y)?.marginalPct : undefined) ?? 22,
   });
   return { cashAvailable: acct.cash, explanation: w.explanation, cost: w.totalCost, detail: w };
 }

@@ -124,7 +124,7 @@ describe("Bank of America checking export (summary block above the header)", () 
       "Rent", // APTS
       "Transfers", // Amex ACH payment: the card's own statement has the purchases
       "Health", // LA Fitness
-      "Income", // Fidelity MoneyLine in: money in
+      "Transfers", // Fidelity MoneyLine: your own investment account (saving, not earning or spending)
       "Transfers", // payment to card 5590
       "Transportation",
       "Dining out",
@@ -154,5 +154,22 @@ describe("sign decides: money out = spending, money in = income", () => {
   it("an unknown card purchase listed as positive becomes Uncategorized spending after flipping, not income", () => {
     const [r] = flipPreview([{ date: "2026-10-01", description: "XYZ LLC", amount: 12, ...sc("XYZ LLC", 12) }]);
     expect(r).toMatchObject({ amount: -12, category: "Uncategorized" });
+  });
+});
+
+describe("checking-account details", () => {
+  it("a Zelle memo says what the payment was for", () => {
+    expect(sc("Zelle payment to Akshit Kurani for July Rent;", -1052).category).toBe("Rent");
+    expect(sc("Zelle payment to Sam for pho and boba", -18).category).toBe("Dining out");
+    expect(sc("Zelle payment to Sam", -18).category).toBe("Other");
+    expect(sc("Zelle payment from AKSHIT KURANI for Rent;", 500).category).toBe("Income");
+  });
+  it("investment account moves are transfers both ways", () => {
+    expect(sc("FID BKG SVC LLC DES:MONEYLINE", -500).category).toBe("Transfers");
+    expect(sc("FID BKG SVC LLC DES:MONEYLINE", 508.99).category).toBe("Transfers");
+  });
+  it("Charlotte isn't the Lotte grocery chain", () => {
+    expect(sc("UMI TERIYAKI Charlotte NC", -14).category).toBe("Dining out");
+    expect(sc("TOMMY HILFIGER CHARLOTTE NC", -60).category).toBe("Shopping");
   });
 });

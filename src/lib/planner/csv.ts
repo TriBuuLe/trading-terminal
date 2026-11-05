@@ -74,32 +74,36 @@ export const CATEGORY_RULES: [string, RegExp][] = [
   ["Transfers", CARD_PAYMENT],
   ["Income", /payroll|direct dep|salary|pay ?cheque|paycheck|deposit from/i],
   // "INTERNATIONAL TRANSACTION FEE … UBER CANADA" is a fee, not a ride
-  ["Fees & interest", /international transaction fee|foreign transaction fee|foreign exchange fee|\bfx fee/i],
+  ["Fees & interest", /international transaction fee|foreign transaction fee|foreign exchange fee|\bfx fee|wire fee/i],
+  ["Insurance", /insurance|assurance|\bins\b|progressive|geico|state farm|allstate|lemonade/i],
   // Before rent/dining/transportation ("rent-a-car" is travel): flights, hotels, car rentals and trip bookings are travel, not commuting.
   [
     "Travel",
     /expedia|booking\.com|airbnb|\bvrbo\b|hotels\.com|priceline|kayak|trip\.com|\bhopper\b|\bhotel|marriott|hilton|hyatt|\bihg\b|holiday inn|best western|sheraton|westin|hostel|air canada|westjet|porter air|flair air|delta air|united air|united\.com|american air|\baa\.com|southwest air|southwest\.com|jetblue|spirit air|frontier air|alaska air|air france|british airways|lufthansa|klm\b|emirates|airlines?\b|amtrak|via rail|greyhound|flixbus|megabus|hertz|avis\b|enterprise rent|budget rent|national car|turo\b/i,
   ],
   ["Rent", /\brent\b|property mgmt|landlord|\bapts?\b|apartment/i],
-  ["Groceries", /grocer|loblaw|no frills|sobeys|metro\b|safeway|kroger|costco|walmart|whole foods|trader joe|freshco|food basics|aldi|harris teeter|food lion|publix/i],
+  ["Groceries", /grocer|loblaw|no frills|sobeys|metro\b|safeway|kroger|costco|walmart|wal-mart|sprouts|lien hoa|saigon market|asian market|oriental market|h mart|\blotte\b|whole foods|trader joe|freshco|food basics|aldi|harris teeter|food lion|publix/i],
   [
     "Dining out",
-    /restaurant|cafe|cafeteria|bldg\d*caf|coffee|starbucks|tim hortons|second cup|dunkin|mcdonald|uber ?\*?eats|noodle|soba\b|mazesoba|\btst-|tahini|doordash|grubhub|skip ?the|pizza|sushi|burger|chipotle|subway|taqueria|taco|\bpho\b|pho\b|ramen|thai|grill|kitchen|bistro|\bdeli\b|bakery|boba|bubble tea|wings|chick-fil-a|wendy|panera/i,
+    /restauran|hot ?pot|gyro|teriyaki|buffet|tst\*|ramen|cafe|cafeteria|bldg\d*caf|coffee|starbucks|tim hortons|second cup|dunkin|mcdonald|uber ?\*?eats|noodle|soba\b|mazesoba|\btst-|tahini|doordash|grubhub|skip ?the|pizza|sushi|burger|chipotle|subway|taqueria|taco|\bpho\b|pho\b|ramen|thai|grill|kitchen|bistro|\bdeli\b|bakery|boba|bubble tea|wings|chick-fil-a|wendy|panera/i,
   ],
-  ["Subscriptions", /uber \*?one|netflix|spotify|disney|apple\.com|icloud|prime video|youtube premium|crave|hulu|patreon|anthropic|claude\.ai|openai|chatgpt|github|notion|adobe|microsoft 365|google one|google storage/i],
-  ["Transportation", /\buber\b|lyft|presto|transit|ttc|go transit|shell|esso|petro|chevron|chevr|texaco|marathon|speedway|circle k|quiktrip|sheetz|exxon|parking|gas station|\bbp\b|sunoco|wawa/i],
+  ["Subscriptions", /uber \*?one|netflix|apple com bill|linkedin|fansly|onlyfans|spotify|disney|apple\.com|icloud|prime video|youtube premium|crave|hulu|patreon|anthropic|claude\.ai|openai|chatgpt|github|notion|adobe|microsoft 365|google one|google storage/i],
+  ["Transportation", /\buber\b|lyft|presto|transit|ttc|go transit|shell|esso|petro|chevron|chevr|texaco|marathon|speedway|circle ?k|citgo|quiktrip|sheetz|exxon|parking|gas station|\bbp\b|sunoco|wawa/i],
   ["Phone & internet", /rogers|bell\b|telus|fido|koodo|freedom mobile|verizon|at&t|\batt\b|t-mobile|comcast|xfinity|spectrum/i],
   ["Utilities", /hydro|electric|enbridge|water|utility|duke energy/i],
-  ["Entertainment", /cinema|regal|\bamc\b|cineplex|theatre|theater|steam|playstation|xbox|nintendo|ticketmaster|eventbrite|bowling/i],
-  ["Shopping", /amazon|best buy|ikea|winners|h&m|uniqlo|shopify|etsy|target\b|nike|adidas|zara|lululemon|sephora|e-commerce|ulta|tommy hilfiger|ralph lauren|calvin klein|old navy|\bgap\b|nordstrom|macy|tj ?maxx|marshalls|ross stores|kohl|foot locker|urban outfitters|american eagle|abercrombie|hollister/i],
-  ["Health", /fitness|\bgym\b|ymca|pharma|shoppers drug|rexall|cvs|walgreens|clinic|dental|physio/i],
+  ["Entertainment", /strikers|cinema|regal|\bamc\b|cineplex|theatre|theater|steam|playstation|xbox|nintendo|ticketmaster|eventbrite|bowling/i],
+  ["Shopping", /amazon|best buy|ikea|winners|h&m|uniqlo|shopify|etsy|target\b|nike|dick'?s sporting|ups store|it'?sugar|adidas|zara|lululemon|sephora|e-commerce|ulta|tommy hilfiger|ralph lauren|calvin klein|old navy|\bgap\b|nordstrom|macy|tj ?maxx|marshalls|ross stores|kohl|foot locker|urban outfitters|american eagle|abercrombie|hollister/i],
+  ["Health", /campus rec|barber|fitness|\bgym\b|ymca|pharma|shoppers drug|rexall|cvs|walgreens|clinic|dental|physio/i],
   ["Education", /tuition|university|college|bookstore|coursera/i],
   ["Insurance", /insurance|assurance/i],
   ["Fees & interest", /interest charge|service fee|\bnsf\b|overdraft|annual fee/i],
 ];
 
 /** Money sent to people or other accounts (Zelle, Remitly, brokerage...). Out = spending (Other), in = income. */
-export const PEER_PAYMENT = /e-?transfer|interac|zelle|venmo|paypal|cash ?app|remitly|rmtly|western union|\bwise\b|transfer|fid bkg|fidelity|moneyline|schwab|vanguard|robinhood|wealthsimple|questrade/i;
+export const PEER_PAYMENT = /e-?transfer|interac|zelle|venmo|paypal|cash ?app|remitly|rmtly|western union|\bwise\b|transfer/i;
+
+/** Moving money to/from your own investment account: saving, not spending or earning. */
+export const BROKERAGE = /fid bkg|fidelity|moneyline|schwab|vanguard|robinhood|wealthsimple|questrade|e\*?trade|webull/i;
 
 /**
  * Sign decides first: money OUT (−) is spending, money IN (+) is income. The one
@@ -109,8 +113,17 @@ export const PEER_PAYMENT = /e-?transfer|interac|zelle|venmo|paypal|cash ?app|re
  */
 export function suggestCategory(description: string, amount?: number): { category: string; confidence: "rule" | "none" } {
   if (CARD_PAYMENT.test(description)) return { category: "Transfers", confidence: "rule" };
-  // People and your other accounts first: a name in "Zelle to Sam Grill" isn't a restaurant.
-  if (amount !== undefined && PEER_PAYMENT.test(description)) return { category: amount > 0 ? "Income" : "Other", confidence: "rule" };
+  // Cash: an ATM deposit is money in; a withdrawal is spending you can't see the details of.
+  if (amount !== undefined && /\batm\b/i.test(description)) return { category: amount > 0 ? "Income" : "Other", confidence: "rule" };
+  if (BROKERAGE.test(description)) return { category: "Transfers", confidence: "rule" };
+  // People next: a name in "Zelle to Sam Grill" isn't a restaurant. But the memo after "for" says what it was:
+  // "Zelle payment to Akshit for July Rent" is rent.
+  if (amount !== undefined && PEER_PAYMENT.test(description)) {
+    if (amount > 0) return { category: "Income", confidence: "rule" };
+    const memo = / for (.+)$/i.exec(description)?.[1] ?? "";
+    const fromMemo = memo ? CATEGORY_RULES.find(([cat, re]) => cat !== "Income" && cat !== "Transfers" && re.test(memo))?.[0] : undefined;
+    return { category: fromMemo ?? "Other", confidence: "rule" };
+  }
   const spending = CATEGORY_RULES.find(([cat, re]) => cat !== "Income" && cat !== "Transfers" && re.test(description))?.[0];
   if (amount !== undefined && amount > 0) return { category: spending ?? "Income", confidence: "rule" };
   if (amount === undefined && /payroll|direct dep|salary|pay ?cheque|paycheck|deposit from/i.test(description)) return { category: "Income", confidence: "rule" };

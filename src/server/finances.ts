@@ -116,7 +116,8 @@ export interface PlanResult {
 
 export async function getSpending(profile: Profile): Promise<SpendingAnalysis> {
   const txs = await listTransactions();
-  return analyzeSpending({ expenses: profile.expenses, txs, today: etParts(new Date()).date, categoryMap: profile.categoryMap });
+  // Categories are one fixed list now, so each transaction category is its own row (older manual mappings are ignored).
+  return analyzeSpending({ expenses: profile.expenses, txs, today: etParts(new Date()).date });
 }
 
 /** One calendar year: take-home, spending, where it went, what needs attention. */
@@ -124,7 +125,7 @@ export async function getYearSummary(year: number): Promise<YearSummary | null> 
   const profile = await getProfile();
   if (!profile) return null;
   const txs = await listTransactions();
-  return yearSummary({ profile, txs, year, today: etParts(new Date()).date, categoryMap: profile.categoryMap });
+  return yearSummary({ profile, txs, year, today: etParts(new Date()).date });
 }
 
 export async function getPlan(opts: { profile?: Profile; runs?: number } = {}): Promise<PlanResult | null> {

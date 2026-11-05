@@ -23,6 +23,8 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     expect((await request.put("/api/finances/profile", { data: profile })).ok()).toBe(true);
     const rows = [
       { date: `${y}-09-05`, description: "TAQUERIA", amount: -40, category: "Dining out" },
+      { date: `${y}-09-12`, description: "ACME DES:PAYROLL", amount: 2650, category: "Income" },
+      { date: `${y}-10-12`, description: "ACME DES:PAYROLL", amount: 2650, category: "Income" },
       { date: `${y}-09-20`, description: "SUSHI", amount: -260, category: "Dining out" },
       { date: `${y}-10-04`, description: "MR. TIRE", amount: -607.34, category: "Transportation" },
       { date: `${y}-10-12`, description: "NIKE", amount: -91.38, category: "Shopping" },
@@ -32,10 +34,14 @@ test("analysis: take-home for the year, spending by category, needs attention", 
 
     await page.goto("/");
     await page.getByRole("button", { name: "Analysis", exact: true }).click();
-    await expect(page.getByText(`Take-home ${y}`)).toBeVisible();
-    await expect(page.getByText("$33,200").first()).toBeVisible(); // 4 × 3,000 + 4 × 5,300
-    await expect(page.getByText(/Where the money went/)).toBeVisible();
-    await expect(page.getByText(/Transportation: \$1,027 .*no budget line/)).toBeVisible(); // 607.34 + 420 (Air Canada, not yet re-sorted)
+    // Money in comes from transactions (2 × 2,650), compared with the income lines for those months (2 × 5,300).
+    await expect(page.getByText(`Money in, ${y}`)).toBeVisible();
+    await expect(page.getByText("$5,300").first()).toBeVisible();
+    await expect(page.getByText(/of it paychecks\. Your income lines expected \$10,600/)).toBeVisible();
+    await expect(page.getByText("Where the money came from")).toBeVisible();
+    await expect(page.getByText(/Transportation: \$1,027 this year .*no budget line/)).toBeVisible(); // 607.34 + 420 (Air Canada, not yet re-sorted)
+    // Each category is its own row; clicking shows its biggest purchases.
+    await page.getByRole("cell", { name: "Dining out", exact: true }).click();
     await expect(page.getByText(/Biggest: SUSHI/)).toBeVisible();
     await page.screenshot({ path: "test-results/analysis.png", fullPage: true });
     // Transactions is storage/import only now.
@@ -49,8 +55,8 @@ test("analysis: take-home for the year, spending by category, needs attention", 
     await page.getByRole("button", { name: "Apply 1" }).click();
     await expect(page.getByText(/Updated 1 transaction/)).toBeVisible();
     await page.getByRole("button", { name: "Analysis", exact: true }).click();
-    await expect(page.getByText(/Travel: \$420 .*no budget line/)).toBeVisible();
-    await expect(page.getByText(/Transportation: \$607 .*no budget line/)).toBeVisible();
+    await expect(page.getByText(/Travel: \$420 this year .*no budget line/)).toBeVisible();
+    await expect(page.getByText(/Transportation: \$607 this year .*no budget line/)).toBeVisible();
 
     // My finances: budget categories are a dropdown from the shared list; an old name offers its standard one.
     await page.getByRole("button", { name: "My finances", exact: true }).click();

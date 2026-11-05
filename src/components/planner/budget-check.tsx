@@ -32,10 +32,6 @@ export function useBudgetActions() {
       api("/api/finances/profile", { method: "PATCH", body: { budgetBasis: basis } })
         .then(refresh)
         .catch((e: Error) => toast.error(e.message)),
-    mapCategory: (from: string, to: string | null) =>
-      api("/api/finances/profile", { method: "PATCH", body: { mapCategory: { from, to } } })
-        .then(refresh)
-        .catch((e: Error) => toast.error(e.message)),
   };
 }
 
@@ -125,96 +121,7 @@ export function BudgetCheck({ x }: { x: PlanResponseExtras }) {
           {w}
         </p>
       ))}
-      <p className="mt-1 text-[10px] text-muted-foreground">Full breakdown and category matching under Analysis.</p>
-    </section>
-  );
-}
-
-/** Full table for the Analysis tab, with category matching for unbudgeted spending. */
-export function SpendingTable({ x, budgetLines }: { x: PlanResponseExtras; budgetLines: string[] }) {
-  const { mapCategory } = useBudgetActions();
-  const s = x.spending;
-  return (
-    <section className="rounded-md border border-border bg-background/40 p-3">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold">Spending vs budget</h3>
-        <BasisToggle x={x} />
-      </div>
-      <p className="mb-2 text-[10px] text-muted-foreground">
-        Average over complete months ({s.completeMonths.join(", ") || "none yet"}). {s.currentMonth} is shown to date with a pace estimate for the full month. Income and
-        transfers (like card payments) aren&apos;t spending.
-      </p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-[11px]">
-          <thead className="text-[10px] text-muted-foreground uppercase">
-            <tr className="text-right">
-              <th className="py-1 text-left font-medium">Budget line</th>
-              <th className="text-left font-medium">From transactions</th>
-              <th className="font-medium">Budget</th>
-              <th className="font-medium">Actual avg</th>
-              <th className="font-medium">Last month</th>
-              <th className="font-medium">This month so far</th>
-              <th className="font-medium">Pace</th>
-              <th className="pl-2 text-left font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody className="num">
-            {s.rows.filter((r) => !(r.status === "unplanned" && !r.actualAvg && !r.monthToDate && !r.lastMonth)).map((r) => (
-              <tr key={(r.planCategory ?? "") + r.actualCategories.join(",")} className="border-t border-border/50 text-right">
-                <td className="py-1 text-left font-sans">
-                  {r.planCategory ?? (
-                    <select
-                      aria-label={`Count ${r.actualCategories[0]} as`}
-                      className="h-6 rounded border border-input bg-background px-1 text-[11px]"
-                      value=""
-                      onChange={(e) => void mapCategory(r.actualCategories[0]!, e.target.value)}
-                    >
-                      <option value="">count as… (unbudgeted)</option>
-                      {budgetLines.map((b) => (
-                        <option key={b} value={b}>
-                          {b}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </td>
-                <td className="text-left font-sans text-muted-foreground">
-                  {r.actualCategories.join(", ") || "—"}
-                  {r.manualCategories.length > 0 && (
-                    <button className="ml-1 text-[10px] text-series-1 hover:underline" title="Undo your manual mapping" onClick={() => r.manualCategories.forEach((c) => void mapCategory(c, null))}>
-                      undo mapping
-                    </button>
-                  )}
-                </td>
-                <td>{r.planCategory ? money(r.planned) : "—"}</td>
-                <td className={cn(r.status === "over" && "text-down", r.status === "under" && "text-up")}>{r.actualAvg === null ? "—" : money(r.actualAvg)}</td>
-                <td>{r.lastMonth === null ? "—" : money(r.lastMonth)}</td>
-                <td>{money(r.monthToDate)}</td>
-                <td>{r.pace === null ? "—" : money(r.pace)}</td>
-                <td className="pl-2 text-left">
-                  <Tag tone={TONE[r.status]}>{r.status}</Tag>
-                </td>
-              </tr>
-            ))}
-            <tr className="border-t border-border text-right font-medium">
-              <td className="py-1 text-left font-sans">Total</td>
-              <td />
-              <td>{money(s.totals.planned)}</td>
-              <td>{s.totals.actualAvg === null ? "—" : money(s.totals.actualAvg)}</td>
-              <td />
-              <td>{money(s.totals.monthToDate)}</td>
-              <td>{s.totals.pace === null ? "—" : money(s.totals.pace)}</td>
-              <td />
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      {s.warnings.map((w) => (
-        <p key={w} className="mt-1 flex gap-1 text-[10px] text-amber-300">
-          <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-          {w}
-        </p>
-      ))}
+      <p className="mt-1 text-[10px] text-muted-foreground">Full breakdown by category under Analysis.</p>
     </section>
   );
 }
